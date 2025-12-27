@@ -72,7 +72,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from .utils import (
     IPC_TIMEOUT,
@@ -106,7 +106,7 @@ from .utils import (
 class BrowserDriver:
     """Encapsulates Playwright browser automation with IPC command handling."""
 
-    def __init__(self, session_id: str = "default", output_dir: Optional[str | Path] = None) -> None:
+    def __init__(self, session_id: str = "default", output_dir: Optional[Union[str, Path]] = None) -> None:
         self.session_id = sanitize_filename(session_id or "default")
         self.output_dir = Path(output_dir) if output_dir else Path("./screenshots")
         self.output_dir.mkdir(parents=True, exist_ok=True)

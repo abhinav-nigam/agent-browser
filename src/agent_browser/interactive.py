@@ -29,7 +29,7 @@ The workflow:
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -43,7 +43,7 @@ class InteractiveRunner:
         start_url: str,
         headless: bool = False,
         session_id: str = "default",
-        output_dir: Optional[str | Path] = None,
+        output_dir: Optional[Union[str, Path]] = None,
     ):
         self.start_url = start_url
         self.headless = headless
