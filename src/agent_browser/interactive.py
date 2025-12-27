@@ -87,7 +87,7 @@ class InteractiveRunner:
             raise RuntimeError("Browser page not initialized. Call start() first.")
         return self._page
 
-    def screenshot(self, name: str | None = None) -> str:
+    def screenshot(self, name: Optional[str] = None) -> str:
         """Take screenshot and return path."""
         self.screenshot_count += 1
         timestamp = datetime.now().strftime("%H%M%S")
