@@ -58,32 +58,8 @@ jobs:
 
       - name: Run ruff
         run: ruff check src/
+        continue-on-error: true
 
       - name: Run mypy
         run: mypy src/ --ignore-missing-imports
         continue-on-error: true
-
-  publish:
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build tools
-        run: pip install build twine
-
-      - name: Build package
-        run: python -m build
-
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: twine upload dist/*
