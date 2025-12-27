@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-browser"
+name = "ai-agent-browser"
 version = "0.1.0"
 description = "A robust browser automation tool for AI agents - control browsers via CLI or IPC"
 readme = "README.md"
