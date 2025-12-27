@@ -2,7 +2,7 @@
 
 A robust browser automation tool designed for AI agents to control browsers via CLI commands.
 
-[![PyPI version](https://badge.fury.io/py/agent-browser.svg)](https://badge.fury.io/py/agent-browser)
+[![PyPI version](https://badge.fury.io/py/ai-agent-browser.svg)](https://badge.fury.io/py/ai-agent-browser)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
@@ -22,7 +22,7 @@ AI agents (like Claude Code, Codex, GPT-based tools) need to interact with web a
 ## Installation
 
 ```bash
-pip install agent-browser
+pip install ai-agent-browser
 playwright install chromium
 ```
 
