@@ -7,7 +7,7 @@ name = "agent-browser"
 version = "0.1.0"
 description = "A robust browser automation tool for AI agents - control browsers via CLI or IPC"
 readme = "README.md"
-license = {text = "GPL-3.0"}
+license = "GPL-3.0-only"
 requires-python = ">=3.9"
 authors = [
     {name = "Agent Browser Contributors"}
@@ -17,7 +17,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
