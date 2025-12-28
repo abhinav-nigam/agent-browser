@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-12-28
+
+### Added
+- Feature Showcase in README with demo GIFs (Claude, Gemini, Interpreter).
+- Adoption assets: Recipes, VS-Selenium comparison, and expanded Blog post.
+
+### Fixed
+- Path Traversal Security: Added sandboxing for all file operations (screenshots, uploads, output directories).
+- README: Fixed encoding issues and character artifacts.
+- Interactive mode: Added validation for empty JS eval strings.
+
 ## [0.1.2] - 2024-12-28
 
 ### Fixed

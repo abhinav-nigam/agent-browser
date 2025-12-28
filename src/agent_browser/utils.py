@@ -37,6 +37,78 @@ def sanitize_filename(name: str) -> str:
 
 
 # =============================================================================
+class PathTraversalError(Exception):
+    """Raised when a path escapes the allowed sandbox directory."""
+    pass
+
+
+def validate_path_in_sandbox(path: Path, sandbox: Path) -> Path:
+    """
+    Validate that a path is within the sandbox directory.
+
+    Args:
+        path: The path to validate (can be relative or absolute)
+        sandbox: The allowed root directory (typically CWD or output_dir)
+
+    Returns:
+        The resolved absolute path if valid
+
+    Raises:
+        PathTraversalError: If the path escapes the sandbox
+    """
+    resolved_path = path.resolve()
+    resolved_sandbox = sandbox.resolve()
+
+    try:
+        resolved_path.relative_to(resolved_sandbox)
+        return resolved_path
+    except ValueError:
+        raise PathTraversalError(
+            f"Path '{path}' escapes sandbox directory '{sandbox}'. "
+            f"Resolved to '{resolved_path}' which is outside '{resolved_sandbox}'."
+        )
+
+
+def validate_path(path: str | Path, root: Path = None) -> Path:
+    """
+    Resolve a path and ensure it stays within the sandbox root.
+
+    Args:
+        path: Path string or Path object to validate
+        root: Sandbox root directory (defaults to current working directory)
+
+    Returns:
+        The resolved absolute path within the sandbox
+
+    Raises:
+        PathTraversalError: If the path escapes the sandbox root
+    """
+    if root is None:
+        root = Path.cwd()
+    resolved_path = Path(path).resolve()
+    return validate_path_in_sandbox(resolved_path, root)
+
+
+def validate_output_dir(output_dir: Path, cwd: Path = None) -> Path:
+    """
+    Validate that output_dir is within the current working directory.
+
+    Args:
+        output_dir: The output directory path
+        cwd: The allowed root directory (defaults to Path.cwd())
+
+    Returns:
+        The validated output directory path
+
+    Raises:
+        PathTraversalError: If output_dir escapes cwd
+    """
+    if cwd is None:
+        cwd = Path.cwd()
+    return validate_path_in_sandbox(output_dir, cwd)
+
+
+# =============================================================================
 # FILE PATH HELPERS
 # =============================================================================
 
@@ -67,6 +139,38 @@ def get_network_log_file(session_id: str) -> Path:
 
 def get_pid_file(session_id: str) -> Path:
     return get_temp_file_path(session_id, "pid.txt")
+
+
+# =============================================================================
+# FILE IO HELPERS
+# =============================================================================
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """
+    Atomically write text content to a file by writing to a temp file first.
+
+    This ensures readers never observe a partially-written file. The temporary
+    file is placed in the same directory to keep the replace operation atomic
+    on the same filesystem.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=path.parent, delete=False
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 # =============================================================================
@@ -110,7 +214,7 @@ def get_state(session_id: str) -> Dict[str, Any]:
 
 def save_state(session_id: str, state: Dict[str, Any]) -> None:
     state_file = get_state_file(session_id)
-    state_file.write_text(json.dumps(state, indent=2))
+    atomic_write_text(state_file, json.dumps(state, indent=2))
 
 
 def clear_state(session_id: str) -> None:
@@ -167,7 +271,7 @@ def get_browser_pid(session_id: str) -> Optional[int]:
 
 def save_browser_pid(session_id: str) -> None:
     pid_file = get_pid_file(session_id)
-    pid_file.write_text(str(os.getpid()))
+    atomic_write_text(pid_file, str(os.getpid()))
 
 
 # =============================================================================
@@ -191,7 +295,7 @@ def save_console_log(session_id: str, entry: Dict[str, Any]) -> None:
     if len(logs) > 100:
         logs = logs[-100:]
     log_file = get_console_log_file(session_id)
-    log_file.write_text(json.dumps(logs, indent=2))
+    atomic_write_text(log_file, json.dumps(logs, indent=2))
 
 
 def get_network_logs(session_id: str) -> Dict[str, Dict[str, Any]]:
@@ -210,7 +314,7 @@ def save_network_logs(session_id: str, logs: Dict[str, Dict[str, Any]]) -> None:
         for key in sorted_keys[:-100]:
             del logs[key]
     log_file = get_network_log_file(session_id)
-    log_file.write_text(json.dumps(logs, indent=2))
+    atomic_write_text(log_file, json.dumps(logs, indent=2))
 
 
 def add_network_request(session_id: str, request_id: str, entry: Dict[str, Any]) -> None:

@@ -6,6 +6,21 @@ A robust browser automation tool designed for AI agents to control browsers via 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
+## 🎬 Feature Showcase
+
+| **The Researcher (Claude)** | **The Architect (Gemini)** | **The Data Op (Interpreter)** |
+| :--- | :--- | :--- |
+| ![Claude Demo](demo_claude_research.gif) | ![Gemini Demo](demo_gemini_audit.gif) | ![Interpreter Demo](demo_interpreter_data.gif) |
+| *Autonomous research & data extraction.* | *Cross-page architectural audits.* | *Complex table scraping to structured data.* |
+
+## How to use this with Claude Code / Aider / ChatGPT
+
+Copy-paste this prompt to let your AI pair-programmer drive `agent-browser` safely:
+
+```
+You can run shell commands on my machine. Use `agent-browser start <url> --session <name>` to launch a browser, then `agent-browser cmd <action> --session <name>` for steps like `screenshot`, `click`, `fill`, `assert_visible`, and `wait_for`. Keep sessions isolated by always passing `--session <name>` and stop them with `agent-browser stop --session <name>` when done. Screenshots land in ./screenshots. Avoid writing outside the project; use relative paths only. If you need to upload a file, ask me for the path first.
+```
+
 ## Why This Exists
 
 AI agents (like Claude Code, Codex, GPT-based tools) need to interact with web applications for testing and automation. However, most browser automation tools require:
@@ -42,16 +57,18 @@ agent-browser cmd assert_visible ".success-message"
 agent-browser stop
 ```
 
+## Security Features
+
+- Path traversal protection on file paths (screenshots, uploads) to keep writes inside allowed directories.
+- Session isolation via explicit `--session` flags so concurrent agents stay sandboxed from each other.
+
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│   AI Agent      │     │  IPC Files   │     │  Browser        │
-│  (Claude Code,  │────▶│  (temp dir)  │────▶│  (Playwright)   │
-│   Codex, etc)   │     │              │     │                 │
-│                 │◀────│  cmd.json    │◀────│  Chromium       │
-│  CLI commands   │     │  result.json │     │                 │
-└─────────────────┘     └──────────────┘     └─────────────────┘
++-------------------+       +----------------------+       +------------------+
+| AI Agent / LLM    | <-->  | CLI + IPC files      | <-->  | Browser (PW)     |
+| (Claude, Codex)   |       | cmd.json / result    |       | Chromium/Playwr. |
++-------------------+       +----------------------+       +------------------+
 ```
 
 The browser runs in one process, listening for commands via JSON files. CLI commands write to `cmd.json`, the browser processes them and writes results to `result.json`. This decoupled architecture allows any process to control the browser.
@@ -143,6 +160,11 @@ All assertions return `[PASS]` or `[FAIL]` prefix for easy parsing.
 | `cmd wait_for_text <text>` | Wait for text | `agent-browser cmd wait_for_text "Complete"` |
 | `cmd help` | Show help | `agent-browser cmd help` |
 
+### Flag Tips
+
+- `cmd --timeout <seconds>` overrides the IPC wait when sending commands (e.g., `agent-browser cmd --timeout 30 wait_for ".loaded" 20000`).
+- `interact --headless` runs the interactive REPL without opening a visible browser window (e.g., `agent-browser interact http://localhost:8080 --headless`).
+
 ## Session Management
 
 Run multiple browser sessions concurrently using session IDs:
@@ -176,7 +198,7 @@ agent-browser start http://localhost:8080 --output-dir ./my-screenshots
 Default timeouts:
 - **Command timeout:** 5 seconds (click, fill, etc.)
 - **wait_for timeout:** 10 seconds (can override: `wait_for .element 15000`)
-- **IPC timeout:** 10 seconds (waiting for browser response)
+- **IPC timeout:** 10 seconds (waiting for browser response) — increase with `cmd --timeout <seconds>` if your action needs more time.
 
 ## Selectors
 
@@ -203,6 +225,12 @@ For manual testing with AI assistance:
 
 ```bash
 agent-browser interact http://localhost:8080
+```
+
+Headless REPL run:
+
+```bash
+agent-browser interact http://localhost:8080 --headless
 ```
 
 This starts a REPL where you can type commands directly:

@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
 
-from .utils import sanitize_filename
+from .utils import PathTraversalError, sanitize_filename, validate_path
 
 
 class InteractiveRunner:
@@ -48,7 +48,12 @@ class InteractiveRunner:
         self.start_url = start_url
         self.headless = headless
         self.session_id = sanitize_filename(session_id or "default")
-        self.output_dir = Path(output_dir) if output_dir else Path("./screenshots/interactive")
+        output_dir_path = Path(output_dir) if output_dir else Path("./screenshots/interactive")
+        # Validate output_dir is within CWD to prevent path traversal
+        try:
+            self.output_dir = validate_path(output_dir_path)
+        except PathTraversalError as e:
+            raise ValueError(f"Invalid output directory: {e}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self._playwright: Any = None

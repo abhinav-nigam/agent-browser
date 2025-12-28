@@ -1,6 +1,9 @@
 """Command-line interface for the agent-browser package."""
 
 import argparse
+import io
+import json
+from contextlib import redirect_stdout
 from typing import Optional, Sequence
 
 from .driver import BrowserDriver
@@ -8,6 +11,20 @@ from .interactive import InteractiveRunner
 from .utils import configure_windows_console
 
 DEFAULT_URL = "http://localhost:8080"
+
+
+def _derive_status_label(result: str) -> str:
+    """Map textual results to a coarse status label for JSON output."""
+    normalized = result.strip().lower()
+    if normalized.startswith("error"):
+        return "ERROR"
+    if normalized.startswith("[fail]"):
+        return "FAIL"
+    if "timeout" in normalized:
+        return "TIMEOUT"
+    if normalized.startswith("[pass]"):
+        return "PASS"
+    return "PASS"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         default=None,
         help="Directory to store screenshots (used when starting a session).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Return machine-readable JSON for command output.",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -102,12 +124,29 @@ def run_interact(args: argparse.Namespace) -> None:
 
 def run_status(args: argparse.Namespace) -> int:
     driver = BrowserDriver(session_id=args.session, output_dir=args.output_dir)
+    if args.json:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            is_running = driver.status()
+        payload = {
+            "status": "RUNNING" if is_running else "NOT_RUNNING",
+            "result": "running" if is_running else "not_running",
+            "details": buffer.getvalue().strip(),
+        }
+        print(json.dumps(payload))
+        return 0 if is_running else 1
+
     return 0 if driver.status() else 1
 
 
 def run_stop(args: argparse.Namespace) -> None:
     driver = BrowserDriver(session_id=args.session, output_dir=args.output_dir)
-    print(driver.stop())
+    result = driver.stop()
+    if args.json:
+        payload = {"status": _derive_status_label(result), "result": result}
+        print(json.dumps(payload))
+    else:
+        print(result)
 
 
 def run_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -117,7 +156,11 @@ def run_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
 
     driver = BrowserDriver(session_id=args.session, output_dir=args.output_dir)
     result = driver.send_command(cmd_text, timeout=args.timeout)
-    print(result)
+    if args.json:
+        payload = {"status": _derive_status_label(result), "result": result}
+        print(json.dumps(payload))
+    else:
+        print(result)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

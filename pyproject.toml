@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-agent-browser"
-version = "0.1.2"
+version = "0.1.3"
 description = "A robust browser automation tool for AI agents - control browsers via CLI or IPC"
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -12,10 +12,35 @@ requires-python = ">=3.9"
 authors = [
     {name = "Agent Browser Contributors"}
 ]
-keywords = ["browser", "automation", "playwright", "testing", "ai", "agent"]
+keywords = [
+    "browser",
+    "automation",
+    "playwright",
+    "testing",
+    "ai",
+    "agent",
+    "mcp",
+    "claude-code",
+    "autonomous-agents",
+    "aider",
+    "llm-agent",
+    "ai-agent",
+    "browser-automation-cli",
+    "gpt-control",
+    "file-ipc",
+    "web-scraping-cli",
+    "headless-browser",
+    "cli-automation",
+    "llm-tools",
+    "ui-testing",
+    "browser-testing",
+    "agentic-testing",
+    "playwright-cli",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",

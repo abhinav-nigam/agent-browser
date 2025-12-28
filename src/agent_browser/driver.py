@@ -78,6 +78,7 @@ from .utils import (
     IPC_TIMEOUT,
     DEFAULT_TIMEOUT,
     WAIT_FOR_TIMEOUT,
+    PathTraversalError,
     add_network_request,
     clear_logs,
     clear_state,
@@ -100,6 +101,7 @@ from .utils import (
     save_console_log,
     save_network_logs,
     save_state,
+    validate_path,
 )
 
 
@@ -108,7 +110,12 @@ class BrowserDriver:
 
     def __init__(self, session_id: str = "default", output_dir: Optional[Union[str, Path]] = None) -> None:
         self.session_id = sanitize_filename(session_id or "default")
-        self.output_dir = Path(output_dir) if output_dir else Path("./screenshots")
+        output_dir_path = Path(output_dir) if output_dir else Path("./screenshots")
+        # Validate output_dir is within CWD to prevent path traversal
+        try:
+            self.output_dir = validate_path(output_dir_path)
+        except PathTraversalError as e:
+            raise ValueError(f"Invalid output directory: {e}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.command_file = get_command_file(self.session_id)
@@ -289,10 +296,15 @@ class BrowserDriver:
                     return "Error: Usage: upload <selector> <file_path>"
                 selector = parts[1]
                 file_path = parts[2]
-                if not Path(file_path).exists():
+                # Validate file path is within CWD to prevent path traversal
+                try:
+                    validated_path = validate_path(file_path)
+                except PathTraversalError:
+                    return f"Error: Path '{file_path}' escapes current working directory"
+                if not validated_path.exists():
                     return f"Error: File not found: {file_path}"
-                page.set_input_files(selector, file_path, timeout=DEFAULT_TIMEOUT)
-                return f"Uploaded: {file_path} to {selector}"
+                page.set_input_files(selector, str(validated_path), timeout=DEFAULT_TIMEOUT)
+                return f"Uploaded: {validated_path} to {selector}"
 
             if cmd == "dialog":
                 if pending_dialog is None or pending_dialog[0] is None:
