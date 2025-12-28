@@ -21,6 +21,9 @@ from agent_browser.utils import (
     save_network_logs,
     save_state,
     sanitize_filename,
+    validate_path,
+    validate_path_in_sandbox,
+    validate_output_dir,
 )
 
 
@@ -124,3 +127,51 @@ class TestProcessRunning:
     def test_invalid_pid_not_running(self):
         # Very high PID unlikely to exist
         assert is_process_running(999999999) is False
+
+
+class TestPathValidation:
+    def test_validate_path_in_sandbox_valid(self, tmp_path):
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        file_path = sandbox / "test.txt"
+        file_path.write_text("hello")
+        
+        result = validate_path_in_sandbox(file_path, sandbox)
+        assert result == file_path.resolve()
+
+    def test_validate_path_in_sandbox_escapes(self, tmp_path):
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        outside = tmp_path / "outside.txt"
+        outside.write_text("secret")
+        
+        from agent_browser.utils import PathTraversalError
+        with pytest.raises(PathTraversalError):
+            validate_path_in_sandbox(outside, sandbox)
+
+    def test_validate_path_default_root(self):
+        # Path relative to CWD should be valid
+        from agent_browser.utils import validate_path
+        p = Path("README.md")
+        result = validate_path(p)
+        assert result == p.resolve()
+
+    def test_validate_output_dir_valid(self, tmp_path):
+        from agent_browser.utils import validate_output_dir
+        cwd = tmp_path / "project"
+        cwd.mkdir()
+        out = cwd / "screenshots"
+        out.mkdir()
+        
+        result = validate_output_dir(out, cwd)
+        assert result == out.resolve()
+
+    def test_validate_output_dir_escapes(self, tmp_path):
+        from agent_browser.utils import validate_output_dir, PathTraversalError
+        cwd = tmp_path / "project"
+        cwd.mkdir()
+        out = tmp_path / "other_place"
+        out.mkdir()
+        
+        with pytest.raises(PathTraversalError):
+            validate_output_dir(out, cwd)

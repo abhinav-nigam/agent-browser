@@ -12,9 +12,10 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 # =============================================================================
 # CONFIGURATION DEFAULTS
@@ -69,7 +70,7 @@ def validate_path_in_sandbox(path: Path, sandbox: Path) -> Path:
         )
 
 
-def validate_path(path: str | Path, root: Path = None) -> Path:
+def validate_path(path: Union[str, Path], root: Path = None) -> Path:
     """
     Resolve a path and ensure it stays within the sandbox root.
 
@@ -164,7 +165,18 @@ def atomic_write_text(path: Path, content: str) -> None:
             tmp.write(content)
             tmp.flush()
             os.fsync(tmp.fileno())
-        os.replace(tmp_path, path)
+        
+        # On Windows, os.replace can fail if the destination is recently closed
+        # or being indexed/antivirus-scanned.
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                os.replace(tmp_path, path)
+                break
+            except PermissionError:
+                if i == max_retries - 1:
+                    raise
+                time.sleep(0.05)
     finally:
         if tmp_path and tmp_path.exists():
             try:
