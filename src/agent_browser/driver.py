@@ -111,11 +111,9 @@ class BrowserDriver:
     def __init__(self, session_id: str = "default", output_dir: Optional[Union[str, Path]] = None) -> None:
         self.session_id = sanitize_filename(session_id or "default")
         output_dir_path = Path(output_dir) if output_dir else Path("./screenshots")
-        # Validate output_dir is within CWD to prevent path traversal
-        try:
-            self.output_dir = validate_path(output_dir_path)
-        except PathTraversalError as e:
-            raise ValueError(f"Invalid output directory: {e}")
+        # For output_dir, we trust explicitly provided paths (absolute or relative)
+        # Sandbox validation is only for runtime file operations, not initial config
+        self.output_dir = output_dir_path.resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.command_file = get_command_file(self.session_id)
