@@ -1,7 +1,5 @@
 """Tests for utility functions."""
 
-import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -10,12 +8,9 @@ from agent_browser.utils import (
     clear_logs,
     clear_state,
     format_assertion_result,
-    get_console_log_file,
     get_console_logs,
-    get_network_log_file,
     get_network_logs,
     get_state,
-    get_state_file,
     is_process_running,
     save_console_log,
     save_network_logs,
@@ -36,7 +31,8 @@ class TestSanitizeFilename:
         assert sanitize_filename("path\\to\\file") == "path_to_file"
 
     def test_empty_string(self):
-        assert sanitize_filename("") == ""
+        # Empty string should return "file" as a safe default
+        assert sanitize_filename("") == "file"
 
 
 class TestFormatAssertionResult:
@@ -151,13 +147,11 @@ class TestPathValidation:
 
     def test_validate_path_default_root(self):
         # Path relative to CWD should be valid
-        from agent_browser.utils import validate_path
         p = Path("README.md")
         result = validate_path(p)
         assert result == p.resolve()
 
     def test_validate_output_dir_valid(self, tmp_path):
-        from agent_browser.utils import validate_output_dir
         cwd = tmp_path / "project"
         cwd.mkdir()
         out = cwd / "screenshots"
@@ -167,7 +161,7 @@ class TestPathValidation:
         assert result == out.resolve()
 
     def test_validate_output_dir_escapes(self, tmp_path):
-        from agent_browser.utils import validate_output_dir, PathTraversalError
+        from agent_browser.utils import PathTraversalError
         cwd = tmp_path / "project"
         cwd.mkdir()
         out = tmp_path / "other_place"

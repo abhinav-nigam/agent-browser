@@ -33,6 +33,7 @@ AI agents (like Claude Code, Codex, GPT-based tools) need to interact with web a
 - **File-based IPC** - Stateless CLI commands control a stateful browser session
 - **Multi-session support** - Run multiple browser sessions concurrently
 - **Built for AI** - Screenshots auto-resize for vision models, assertions return clear PASS/FAIL
+- **MCP Server** - Native Model Context Protocol support for Claude Desktop and other MCP clients
 
 ## Installation
 
@@ -59,8 +60,145 @@ agent-browser stop
 
 ## Security Features
 
-- Path traversal protection on file paths (screenshots, uploads) to keep writes inside allowed directories.
-- Session isolation via explicit `--session` flags so concurrent agents stay sandboxed from each other.
+- **Path traversal protection** on file paths (screenshots, uploads) to keep writes inside allowed directories.
+- **Session isolation** via explicit `--session` flags so concurrent agents stay sandboxed from each other.
+- **SSRF Protection** - URL validation blocks dangerous schemes (file://, javascript://, data://) and private IP ranges.
+- **DNS rebinding protection** - Resolved IPs are checked against private ranges to prevent attacks.
+
+## MCP Server (Model Context Protocol)
+
+agent-browser includes a built-in MCP server for direct integration with Claude Desktop and other MCP-compatible AI assistants.
+
+### Starting the MCP Server
+
+```bash
+# Start the MCP server (headless by default)
+agent-browser-mcp
+
+# Start with visible browser for debugging
+agent-browser-mcp --visible
+
+# Allow navigation to localhost/private IPs (for local development)
+agent-browser-mcp --allow-private
+```
+
+### Claude Code CLI Configuration
+
+Add the MCP server to Claude Code:
+
+```bash
+# For local development (allows localhost access)
+claude mcp add agent-browser -- agent-browser-mcp --allow-private
+
+# For production use (blocks private IPs for SSRF protection)
+claude mcp add agent-browser -- agent-browser-mcp
+
+# With visible browser for debugging
+claude mcp add agent-browser -- agent-browser-mcp --allow-private --visible
+```
+
+Verify it's connected:
+
+```bash
+claude mcp list
+# Should show: agent-browser: agent-browser-mcp --allow-private - ✓ Connected
+```
+
+### Claude Desktop Configuration
+
+Add to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "agent-browser-mcp",
+      "args": ["--allow-private"]
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+The MCP server exposes 36 browser automation tools:
+
+#### Navigation
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `goto` | `url` | Navigate to URL (with SSRF protection) |
+| `back` | - | Navigate back |
+| `forward` | - | Navigate forward |
+| `reload` | - | Reload current page |
+| `get_url` | - | Get current page URL |
+
+#### Interactions
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `click` | `selector` | Click an element |
+| `click_nth` | `selector`, `index` | Click the nth matching element |
+| `fill` | `selector`, `value` | Fill a form field |
+| `type` | `selector`, `text` | Type text with key events |
+| `select` | `selector`, `value` | Select dropdown option |
+| `hover` | `selector` | Hover over element |
+| `focus` | `selector` | Focus an element |
+| `press` | `key` | Press keyboard key (Enter, Tab, Escape, etc.) |
+| `upload` | `selector`, `file_path` | Upload file to input |
+
+#### Waiting
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `wait` | `duration_ms` | Wait for milliseconds |
+| `wait_for` | `selector`, `timeout_ms` | Wait for element to appear |
+| `wait_for_text` | `text`, `timeout_ms` | Wait for text to appear |
+| `wait_for_url` | `pattern`, `timeout_ms` | Wait for URL to contain pattern |
+| `wait_for_load_state` | `state` | Wait for load/domcontentloaded/networkidle |
+
+#### Data Extraction
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `screenshot` | `name` (optional) | Take full-page screenshot |
+| `text` | `selector` | Get element's text content |
+| `value` | `selector` | Get input field value |
+| `attr` | `selector`, `attribute` | Get element attribute |
+| `count` | `selector` | Count matching elements |
+| `evaluate` | `script` | Execute JavaScript |
+
+#### Assertions
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `assert_visible` | `selector` | Check if element is visible [PASS/FAIL] |
+| `assert_text` | `selector`, `expected` | Check if element contains text [PASS/FAIL] |
+| `assert_url` | `pattern` | Check if URL contains pattern [PASS/FAIL] |
+
+#### Page State
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `scroll` | `direction` | Scroll: up/down/top/bottom |
+| `viewport` | `width`, `height` | Set viewport size |
+| `cookies` | - | Get all cookies |
+| `storage` | - | Get localStorage |
+| `clear` | - | Clear localStorage and sessionStorage |
+
+#### Debugging
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `console` | - | Get console logs |
+| `network` | - | Get network request logs |
+| `dialog` | `action`, `prompt_text` | Handle JS dialogs (accept/dismiss) |
+
+### MCP Security
+
+The MCP server includes robust security features:
+
+- **Blocked schemes**: `file://`, `javascript://`, `data://`, `chrome://`, `ftp://`, and more
+- **Private IP blocking**: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x, and link-local ranges
+- **Cloud metadata protection**: Blocks 169.254.169.254 and metadata.google.internal
+- **DNS validation**: Resolved IPs are checked against private ranges
+- **Credential rejection**: URLs with embedded user:pass credentials are rejected
+- **Path sandboxing**: File uploads are restricted to the working directory
+
+Use `--allow-private` only for local development when you need to access localhost services.
 
 ## Architecture
 

@@ -4,6 +4,44 @@ Browser driver logic for agent-browser.
 Encapsulates browser automation and IPC handling in a class-based design.
 """
 
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, List, Optional, Union
+
+from .utils import (
+    IPC_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    WAIT_FOR_TIMEOUT,
+    PathTraversalError,
+    add_network_request,
+    clear_logs,
+    clear_state,
+    configure_windows_console,
+    format_assertion_result,
+    get_browser_pid,
+    get_command_file,
+    get_console_log_file,
+    get_console_logs,
+    get_network_log_file,
+    get_network_logs,
+    get_pid_file,
+    get_result_file,
+    sanitize_filename,
+    get_state,
+    get_state_file,
+    is_process_running,
+    resize_screenshot_if_needed,
+    save_browser_pid,
+    save_console_log,
+    save_network_logs,
+    save_state,
+    validate_path,
+)
+
 HELP_TEXT = """
 agent-browser - Browser automation for AI agents
 
@@ -14,7 +52,7 @@ BROWSER CONTROL
   reload                    Reload page
   goto <url>                Navigate to URL
   back                      Navigate back
-  forward                   Navigate forward
+  forward                   Navigate back
   url                       Print current URL
   viewport <w> <h>          Set viewport size
 
@@ -66,44 +104,6 @@ DEBUGGING
   help                      Show this help
 """
 
-import json
-import os
-import sys
-import time
-from datetime import datetime
-from pathlib import Path
-from typing import Any, List, Optional, Union
-
-from .utils import (
-    IPC_TIMEOUT,
-    DEFAULT_TIMEOUT,
-    WAIT_FOR_TIMEOUT,
-    PathTraversalError,
-    add_network_request,
-    clear_logs,
-    clear_state,
-    configure_windows_console,
-    format_assertion_result,
-    get_browser_pid,
-    get_command_file,
-    get_console_log_file,
-    get_console_logs,
-    get_network_log_file,
-    get_network_logs,
-    get_pid_file,
-    get_result_file,
-    sanitize_filename,
-    get_state,
-    get_state_file,
-    is_process_running,
-    resize_screenshot_if_needed,
-    save_browser_pid,
-    save_console_log,
-    save_network_logs,
-    save_state,
-    validate_path,
-)
-
 
 class BrowserDriver:
     """Encapsulates Playwright browser automation with IPC command handling."""
@@ -138,7 +138,7 @@ class BrowserDriver:
             )
         )
 
-    def process_command(self, page, cmd_text: str, step: int, pending_dialog: Optional[List[Any]] = None) -> str:
+    def process_command(self, page: Any, cmd_text: str, step: int, pending_dialog: Optional[List[Any]] = None) -> str:
         """
         Process a single command and return the result.
 
@@ -356,8 +356,7 @@ class BrowserDriver:
                     if expected in actual:
                         return format_assertion_result(True, f"Text found: '{expected}' in {selector}")
                     return format_assertion_result(
-                        False, f"Text NOT found: '{expected}' in {selector}. Actual: '{actual[:100]}'"
-                    )
+                        False, f"Text NOT found: '{expected}' in {selector}. Actual: '{actual[:100]}'")
                 except Exception as exc:
                     return format_assertion_result(False, f"Error getting text: {exc}")
 
@@ -373,8 +372,7 @@ class BrowserDriver:
                     if actual.strip() == expected.strip():
                         return format_assertion_result(True, f"Text matches exactly: {selector}")
                     return format_assertion_result(
-                        False, f"Text mismatch. Expected: '{expected}', Actual: '{actual[:100]}'"
-                    )
+                        False, f"Text mismatch. Expected: '{expected}', Actual: '{actual[:100]}'")
                 except Exception as exc:
                     return format_assertion_result(False, f"Error getting text: {exc}")
 
@@ -390,8 +388,7 @@ class BrowserDriver:
                     if actual == expected:
                         return format_assertion_result(True, f"Value matches: {selector}")
                     return format_assertion_result(
-                        False, f"Value mismatch. Expected: '{expected}', Actual: '{actual}'"
-                    )
+                        False, f"Value mismatch. Expected: '{expected}', Actual: '{actual}'")
                 except Exception as exc:
                     return format_assertion_result(False, f"Error getting value: {exc}")
 
@@ -474,11 +471,11 @@ class BrowserDriver:
                 return "\n".join(output)
 
             if cmd == "network":
-                logs = get_network_logs(self.session_id)
-                if not logs:
+                net_logs = get_network_logs(self.session_id)
+                if not net_logs:
                     return "No network requests logged"
                 output = []
-                sorted_logs = sorted(logs.values(), key=lambda x: x.get("start_time", ""), reverse=True)[:20]
+                sorted_logs = sorted(net_logs.values(), key=lambda x: x.get("start_time", ""), reverse=True)[:20]
                 for log in reversed(sorted_logs):
                     method = log.get("method", "?")
                     url = log.get("url", "")
@@ -492,8 +489,8 @@ class BrowserDriver:
                 return "\n".join(output)
 
             if cmd == "network_failed":
-                logs = get_network_logs(self.session_id)
-                failed = [l for l in logs.values() if l.get("status") == "failed"]
+                net_logs_failed = get_network_logs(self.session_id)
+                failed = [log for log in net_logs_failed.values() if log.get("status") == "failed"]
                 if not failed:
                     return "No failed requests"
                 output = []

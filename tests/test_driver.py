@@ -1,6 +1,5 @@
 """Tests for BrowserDriver class."""
 
-import pytest
 
 from agent_browser.driver import BrowserDriver, HELP_TEXT
 

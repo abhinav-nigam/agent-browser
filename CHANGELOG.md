@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2025-12-29
+
+### Fixed
+- **Critical**: MCP server async deadlock - browser now uses lazy initialization within FastMCP's event loop context, fixing indefinite hangs on all tool calls
+- MCP `_record_network` TypeError during browser shutdown when `request.failure()` returns None
+
+### Added
+- **16 new MCP tools** expanding from 20 to 36 total tools:
+  - `wait_for` - wait for selector to appear (critical for SPAs)
+  - `wait_for_text` - wait for specific text to appear
+  - `text` - get element's text content
+  - `value` - get input field value
+  - `attr` - get element attribute
+  - `count` - count matching elements
+  - `press` - press keyboard keys (Enter, Tab, Escape, etc.)
+  - `reload` - reload current page
+  - `viewport` - set viewport size
+  - `assert_visible` - check element visibility [PASS/FAIL]
+  - `assert_text` - check element contains text [PASS/FAIL]
+  - `clear` - clear localStorage and sessionStorage
+  - `dialog` - handle JavaScript alerts/confirms/prompts
+  - `wait_for_url` - wait for URL to contain pattern (useful for navigation)
+  - `wait_for_load_state` - wait for load/domcontentloaded/networkidle
+  - `assert_url` - check if URL contains pattern [PASS/FAIL]
+- Claude Code CLI configuration instructions in README
+- `configure()` method on BrowserServer for setting options before run
+- `validate_path_in_sandbox()` and `validate_output_dir()` utility functions
+- Console log limiting (max 200 entries) to prevent memory growth
+- Comprehensive MCP security documentation
+
+### Changed
+- MCP server now starts browser on first tool call (lazy init) instead of pre-starting
+- Exported `BrowserServer`, `URLValidator`, and utility functions from package root
+
 ## [0.1.3] - 2025-12-28
 
 ### Added
