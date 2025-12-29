@@ -244,9 +244,22 @@ def is_process_running(pid: int) -> bool:
             import psutil  # type: ignore
 
             return bool(psutil.pid_exists(pid))
-        except Exception:  # pylint: disable=broad-except
-            # Fallback to os.kill on platforms that support it
+        except ImportError:
+            # psutil not installed, use Windows API via ctypes
             pass
+        try:
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:  # pylint: disable=broad-except
+            return False
+    # Unix: use os.kill with signal 0
     try:
         os.kill(pid, 0)
     except OSError:
