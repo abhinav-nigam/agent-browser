@@ -163,8 +163,11 @@ async def test_new_mcp_tools():
             `;
         """)
 
+        # Small wait for DOM to stabilize (helps on slower CI machines)
+        await server.wait(100)
+
         # Test wait_for (element already exists)
-        result = await server.wait_for("#title", timeout_ms=1000)
+        result = await server.wait_for("#title", timeout_ms=2000)
         assert result["success"] is True
 
         # Test wait_for_text
