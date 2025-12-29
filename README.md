@@ -13,7 +13,7 @@ A robust browser automation tool designed for AI agents to control browsers via 
 | ![Claude Demo](demo_claude_research.gif) | ![Gemini Demo](demo_gemini_audit.gif) | ![Interpreter Demo](demo_interpreter_data.gif) |
 | *Autonomous research & data extraction.* | *Cross-page architectural audits.* | *Complex table scraping to structured data.* |
 
-## How to use this with Claude Code / Aider / ChatGPT
+## How to use this with AI Coding Assistants
 
 Copy-paste this prompt to let your AI pair-programmer drive `agent-browser` safely:
 
@@ -23,7 +23,7 @@ You can run shell commands on my machine. Use `agent-browser start <url> --sessi
 
 ## Why This Exists
 
-AI agents (like Claude Code, Codex, GPT-based tools) need to interact with web applications for testing and automation. However, most browser automation tools require:
+AI agents (Claude, Codex, Gemini, GPT-based tools, Cursor, etc.) need to interact with web applications for testing and automation. However, most browser automation tools require:
 - Programmatic API access within a running process
 - Complex async/await patterns
 - Persistent connections
@@ -33,7 +33,7 @@ AI agents (like Claude Code, Codex, GPT-based tools) need to interact with web a
 - **File-based IPC** - Stateless CLI commands control a stateful browser session
 - **Multi-session support** - Run multiple browser sessions concurrently
 - **Built for AI** - Screenshots auto-resize for vision models, assertions return clear PASS/FAIL
-- **MCP Server** - Native Model Context Protocol support for Claude Desktop and other MCP clients
+- **MCP Server** - Native Model Context Protocol support for AI assistants and coding tools
 
 ## Installation
 
@@ -67,46 +67,27 @@ agent-browser stop
 
 ## MCP Server (Model Context Protocol)
 
-agent-browser includes a built-in MCP server for direct integration with Claude Desktop and other MCP-compatible AI assistants.
+agent-browser includes a built-in MCP server for integration with any MCP-compatible AI assistant:
 
-### Starting the MCP Server
+- **Claude** (Desktop, Code)
+- **OpenAI Codex** / ChatGPT with plugins
+- **Google Gemini** with extensions
+- **Cursor**, **Windsurf**, **Cline**
+- **Any MCP-compatible client**
 
-```bash
-# Start the MCP server (headless by default)
-agent-browser-mcp
-
-# Start with visible browser for debugging
-agent-browser-mcp --visible
-
-# Allow navigation to localhost/private IPs (for local development)
-agent-browser-mcp --allow-private
-```
-
-### Claude Code CLI Configuration
-
-Add the MCP server to Claude Code:
+### Server Options
 
 ```bash
-# For local development (allows localhost access)
-claude mcp add agent-browser -- agent-browser-mcp --allow-private
+agent-browser-mcp [OPTIONS]
 
-# For production use (blocks private IPs for SSRF protection)
-claude mcp add agent-browser -- agent-browser-mcp
-
-# With visible browser for debugging
-claude mcp add agent-browser -- agent-browser-mcp --allow-private --visible
+Options:
+  --visible        Run browser in headed mode (for debugging)
+  --allow-private  Allow navigation to localhost/private IPs (for local dev)
 ```
 
-Verify it's connected:
+### MCP Client Configuration
 
-```bash
-claude mcp list
-# Should show: agent-browser: agent-browser-mcp --allow-private - ✓ Connected
-```
-
-### Claude Desktop Configuration
-
-Add to your Claude Desktop config (`claude_desktop_config.json`):
+Add to your MCP client's config file (typically JSON):
 
 ```json
 {
@@ -114,6 +95,31 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
     "agent-browser": {
       "command": "agent-browser-mcp",
       "args": ["--allow-private"]
+    }
+  }
+}
+```
+
+**Common configurations:**
+
+| Use Case | Args |
+|----------|------|
+| Production (SSRF protected) | `[]` |
+| Local development | `["--allow-private"]` |
+| Debugging (visible browser) | `["--allow-private", "--visible"]` |
+
+**Dual instances** (headless + visible): Register two servers with different names:
+
+```json
+{
+  "mcpServers": {
+    "agent-browser": {
+      "command": "agent-browser-mcp",
+      "args": ["--allow-private"]
+    },
+    "agent-browser-visible": {
+      "command": "agent-browser-mcp",
+      "args": ["--allow-private", "--visible"]
     }
   }
 }
@@ -385,17 +391,18 @@ Screenshot saved: ./screenshots/interactive/step_02_after_login.png
 
 ## Integration with AI Agents
 
-### Claude Code Example
+### CLI Example (works with any AI agent)
+
+When your AI assistant can execute shell commands, it can drive the browser:
 
 ```bash
-# In Claude Code conversation:
-# "Test the login flow on localhost:8080"
+# User: "Test the login flow on localhost:8080"
 
-# Claude runs:
+# AI agent runs:
 agent-browser start http://localhost:8080 --session test1 &
 sleep 2
 agent-browser cmd screenshot login_page --session test1
-# Claude analyzes screenshot...
+# AI analyzes screenshot...
 agent-browser cmd fill "#username" "testuser" --session test1
 agent-browser cmd fill "#password" "testpass" --session test1
 agent-browser cmd click "button[type='submit']" --session test1
@@ -405,7 +412,7 @@ agent-browser cmd screenshot success --session test1
 agent-browser stop --session test1
 ```
 
-### Generic LLM Integration
+### Python Integration
 
 ```python
 import subprocess
