@@ -9,5 +9,5 @@ from .driver import BrowserDriver
 from .interactive import InteractiveRunner
 from .utils import resize_screenshot_if_needed
 
-__version__ = "0.1.4"
+__version__ = "0.1.6"
 __all__ = ["BrowserDriver", "InteractiveRunner", "resize_screenshot_if_needed"]
