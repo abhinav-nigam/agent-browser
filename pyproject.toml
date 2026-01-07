@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-agent-browser"
-version = "0.1.6"
+version = "0.1.7"
 description = "A robust browser automation tool for AI agents - control browsers via CLI or IPC"
 readme = "README.md"
 license = {text = "GPL-3.0-only"}
