@@ -169,6 +169,7 @@ class BrowserServer:
         self._log_limit = 200
         self._lock = asyncio.Lock()
         self._started = False
+        self._mocked_routes: List[str] = []
         self._register_tools()
 
     def configure(self, allow_private: bool = False, headless: bool = True) -> None:
@@ -239,6 +240,19 @@ class BrowserServer:
         self.server.tool()(self.check_local_port)
         self.server.tool()(self.page_state)
         self.server.tool()(self.find_elements)
+        self.server.tool()(self.suggest_next_actions)
+        self.server.tool()(self.validate_selector)
+
+        # Perception tools (for reading page content)
+        self.server.tool()(self.get_page_markdown)
+        self.server.tool()(self.get_accessibility_tree)
+        self.server.tool()(self.find_relative)
+
+        # Advanced tools
+        self.server.tool()(self.wait_for_change)
+        self.server.tool()(self.highlight)
+        self.server.tool()(self.mock_network)
+        self.server.tool()(self.clear_mocks)
 
     async def start(self, headless: bool = True) -> None:
         """
@@ -974,7 +988,7 @@ class BrowserServer:
         """
         [Agent Browser] Check if an element contains expected text (substring match).
         Returns [PASS]/[FAIL] in message - never throws. Use for verification without breaking flow.
-        Returns data.found (bool) and data.text (actual content).
+        Returns data.found (bool) and truncated data.text (max 500 chars with context).
         """
 
         try:
@@ -982,9 +996,31 @@ class BrowserServer:
                 page = await self._ensure_page()
                 element = page.locator(selector).first
                 content = await element.text_content() or ""
+
             if expected in content:
-                return {"success": True, "message": f"[PASS] Found '{expected}' in {selector}", "data": {"found": True, "text": content}}
-            return {"success": True, "message": f"[FAIL] '{expected}' not in {selector}", "data": {"found": False, "text": content}}
+                # Found - show context around the match
+                idx = content.find(expected)
+                start = max(0, idx - 100)
+                end = min(len(content), idx + len(expected) + 100)
+                context = content[start:end]
+                if start > 0:
+                    context = "..." + context
+                if end < len(content):
+                    context = context + "..."
+
+                return {
+                    "success": True,
+                    "message": f"[PASS] Found '{expected}' in {selector}",
+                    "data": {"found": True, "text": context},
+                }
+
+            # Not found - show truncated content summary
+            truncated = content[:500] + ("..." if len(content) > 500 else "")
+            return {
+                "success": True,
+                "message": f"[FAIL] '{expected}' not found in {selector} ({len(content)} chars)",
+                "data": {"found": False, "text": truncated, "total_length": len(content)},
+            }
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": str(exc)}
 
@@ -1123,12 +1159,14 @@ All selectors use **Playwright's selector engine** - NOT standard document.query
 
 ### Navigation: goto, back, forward, reload, get_url
 ### Interactions: click, click_nth, fill, type, select, hover, focus, press
-### Waiting: wait, wait_for, wait_for_text, wait_for_url, wait_for_load_state
+### Waiting: wait, wait_for, wait_for_text, wait_for_url, wait_for_load_state, wait_for_change
 ### Data: screenshot, text, value, attr, count, evaluate
 ### Assertions: assert_visible, assert_text, assert_url (return PASS/FAIL, never throw)
 ### Page State: scroll, viewport, cookies, storage, clear
-### Debugging: console, network, dialog
+### Debugging: console, network, dialog, highlight
 ### Agent Utils: get_agent_guide, browser_status, check_local_port, page_state, find_elements
+### Perception: get_page_markdown, get_accessibility_tree, find_relative (for READING content)
+### Testing: mock_network, clear_mocks (for mocking API calls)
 
 **All interaction tools auto-wait** for elements to be visible and actionable.
 You do NOT need wait_for before click or fill.""",
@@ -1149,14 +1187,20 @@ click("button:has-text('Submit')")
 click("#load-more")
 wait_for_text("Results loaded")
 
-### Check form validation:
-click("#submit")
-assert_visible(".error-message")
-assert_text(".error-message", "Email is required")
+### Read page content (KEY for perception):
+get_page_markdown("#results")  # Extract content as markdown
+find_relative("text=Total:", "right", "span")  # Find value next to label
+get_accessibility_tree()  # Understand component structure
+
+### Wait for SPA updates:
+click("#calculate")
+wait_for_change("#results")  # Wait for content to mutate
+get_page_markdown("#results")  # Read updated content
 
 ### Debug selectors:
-find_elements("button")  # See all matching elements with details
-page_state()  # Get all interactive elements with suggested selectors""",
+highlight("#submit-btn")  # Visual border for verification
+screenshot("debug")
+find_elements("button")  # See all matching elements""",
 
             "errors": """## Error Handling
 
@@ -1170,7 +1214,44 @@ page_state()  # Get all interactive elements with suggested selectors""",
 ## Security Notes
 - page_state() and find_elements() mask sensitive fields (password, token, key, ssn, cvv, pin)
 - check_local_port() only allows localhost/127.0.0.1/::1 (SSRF protection)
-- Private IPs blocked by default (use --allow-private for local testing)"""
+- Private IPs blocked by default (use --allow-private for local testing)""",
+
+            "safety": """## Tool Safety & Side Effects
+
+Use this to decide how aggressive to be with self-correction loops.
+
+### SAFE (Read-only, Idempotent) - Can retry freely:
+- get_agent_guide, browser_status, check_local_port
+- page_state, find_elements, validate_selector, suggest_next_actions
+- get_page_markdown, get_accessibility_tree, find_relative
+- text, value, attr, count, get_url, evaluate (when only reading values)
+- screenshot, console, network, cookies, storage
+- assert_visible, assert_text, assert_url
+- wait, wait_for, wait_for_text, wait_for_url, wait_for_load_state, wait_for_change
+
+### MUTATING (Changes page state) - Retry with caution:
+- click, click_nth, fill, type, select, press, upload
+- hover, focus, scroll, viewport
+- dialog (accepts/dismisses alerts)
+- goto, back, forward, reload
+- clear (clears storage)
+- highlight (temporary visual change)
+- evaluate (when modifying DOM - use caution)
+
+### EXTERNAL EFFECTS (May cost money/send data) - Confirm before retrying:
+- click on buy/submit/send buttons
+- fill in payment forms
+- Any action after filling sensitive forms
+
+### NETWORK MODIFICATION:
+- mock_network (sets up interception - reversible with clear_mocks)
+- clear_mocks (removes all mocks)
+
+### Best Practices:
+1. Use validate_selector() before click() to avoid blind failures
+2. Use assert_* tools (return PASS/FAIL) instead of exceptions
+3. Use page_state() to understand available elements before interacting
+4. For SPAs, use wait_for_change() after clicking to detect updates"""
         }
 
         if section and section.lower() in guide_sections:
@@ -1186,6 +1267,7 @@ page_state()  # Get all interactive elements with suggested selectors""",
             guide_sections["intro"],
             guide_sections["selectors"],
             guide_sections["tools"],
+            guide_sections["safety"],
             guide_sections["patterns"],
             guide_sections["errors"]
         ])
@@ -1249,6 +1331,20 @@ page_state()  # Get all interactive elements with suggested selectors""",
                 "auto_wait": True,
                 "default_timeout_ms": 10000,
                 "active_page": active_page,
+                # Capability flags for agents to branch logic
+                "capabilities": {
+                    "javascript": True,  # Always enabled in Playwright
+                    "cookies": True,
+                    "local_storage": True,
+                    "file_upload": True,
+                    "file_download": True,  # Playwright handles downloads in both modes
+                    "clipboard": not self.headless,  # Clipboard access requires headed mode
+                    "network_interception": True,  # mock_network is available
+                    "console_access": True,  # console() tool available
+                    "screenshots": True,
+                    "pdf_generation": True,  # Playwright can generate PDFs
+                },
+                "active_mocks": len(self._mocked_routes),
             }
 
             return {
@@ -1603,6 +1699,741 @@ page_state()  # Get all interactive elements with suggested selectors""",
             if hints:
                 result["hints"] = hints
             return result
+
+    async def suggest_next_actions(self) -> Dict[str, Any]:
+        """
+        [Agent Browser] Analyze current page and suggest relevant tools/actions.
+        Use when stuck or unsure what to do next. Returns context-aware hints based on:
+        - Page type (PDF, canvas, iframes)
+        - Forms, modals, error messages
+        - Loading states and dynamic content
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+                url = page.url
+
+                suggestions: List[Dict[str, Any]] = []
+                warnings: List[str] = []
+
+                # Analyze page context
+                analysis = await page.evaluate("""
+                    () => {
+                        const result = {
+                            hasForm: document.querySelectorAll('form').length > 0,
+                            formInputs: document.querySelectorAll('input, textarea, select').length,
+                            hasButtons: document.querySelectorAll('button, [type="submit"], [role="button"]').length,
+                            hasLinks: document.querySelectorAll('a[href]').length,
+                            hasLoadingIndicator: !!(
+                                document.querySelector('[class*="loading"]') ||
+                                document.querySelector('[class*="spinner"]') ||
+                                document.querySelector('[aria-busy="true"]')
+                            ),
+                            hasErrorMessage: !!(
+                                document.querySelector('[class*="error"]') ||
+                                document.querySelector('[role="alert"]') ||
+                                document.querySelector('.alert-danger')
+                            ),
+                            hasModal: !!(
+                                document.querySelector('[role="dialog"]') ||
+                                document.querySelector('.modal.show') ||
+                                document.querySelector('[aria-modal="true"]')
+                            ),
+                            hasTable: document.querySelectorAll('table').length > 0,
+                            hasIframe: document.querySelectorAll('iframe').length > 0,
+                            hasCanvas: document.querySelectorAll('canvas').length > 0,
+                            bodyText: document.body?.innerText?.slice(0, 500) || '',
+                            title: document.title,
+                        };
+                        return result;
+                    }
+                """)
+
+                # Check for PDF
+                if url.lower().endswith('.pdf') or 'application/pdf' in url:
+                    warnings.append("PDF detected - DOM selectors won't work on PDF content")
+                    suggestions.append({
+                        "action": "screenshot",
+                        "reason": "Capture PDF visually for analysis",
+                        "priority": "high",
+                    })
+
+                # Check for loading state
+                if analysis.get("hasLoadingIndicator"):
+                    suggestions.append({
+                        "action": "wait_for_change or wait_for_text",
+                        "reason": "Page appears to be loading - wait for content to stabilize",
+                        "priority": "high",
+                    })
+
+                # Check for error messages
+                if analysis.get("hasErrorMessage"):
+                    suggestions.append({
+                        "action": "get_page_markdown or screenshot",
+                        "reason": "Error message detected - read the error content",
+                        "priority": "high",
+                    })
+                    suggestions.append({
+                        "action": "console()",
+                        "reason": "Check console for JavaScript errors",
+                        "priority": "medium",
+                    })
+
+                # Check for modal/dialog
+                if analysis.get("hasModal"):
+                    suggestions.append({
+                        "action": "page_state() then interact with modal",
+                        "reason": "Modal dialog is open - interact with it first",
+                        "priority": "high",
+                    })
+
+                # Check for forms
+                if analysis.get("hasForm") and analysis.get("formInputs", 0) > 0:
+                    suggestions.append({
+                        "action": "page_state() to see form fields",
+                        "reason": f"Form with {analysis['formInputs']} input(s) detected",
+                        "priority": "medium",
+                    })
+
+                # Check for canvas (games, charts)
+                if analysis.get("hasCanvas"):
+                    warnings.append("Canvas element detected - text extraction won't work, use screenshot")
+                    suggestions.append({
+                        "action": "screenshot",
+                        "reason": "Canvas content requires visual inspection",
+                        "priority": "medium",
+                    })
+
+                # Check for iframes
+                if analysis.get("hasIframe"):
+                    warnings.append("Iframe detected - content inside iframe may not be accessible with standard selectors")
+
+                # Check for tables (data extraction)
+                if analysis.get("hasTable"):
+                    suggestions.append({
+                        "action": "get_page_markdown",
+                        "reason": "Table detected - extract structured data",
+                        "priority": "medium",
+                    })
+
+                # Default suggestions if page looks normal
+                if not suggestions:
+                    if analysis.get("hasButtons", 0) > 0 or analysis.get("hasLinks", 0) > 0:
+                        suggestions.append({
+                            "action": "page_state()",
+                            "reason": "Get interactive elements with ready-to-use selectors",
+                            "priority": "medium",
+                        })
+                    suggestions.append({
+                        "action": "get_page_markdown()",
+                        "reason": "Read page content as structured text",
+                        "priority": "medium",
+                    })
+
+                return {
+                    "success": True,
+                    "message": f"Analyzed page: {analysis.get('title', 'Untitled')[:50]}",
+                    "data": {
+                        "url": url,
+                        "suggestions": suggestions,
+                        "warnings": warnings,
+                        "page_context": {
+                            "has_form": analysis.get("hasForm"),
+                            "has_loading": analysis.get("hasLoadingIndicator"),
+                            "has_error": analysis.get("hasErrorMessage"),
+                            "has_modal": analysis.get("hasModal"),
+                            "has_table": analysis.get("hasTable"),
+                            "has_canvas": analysis.get("hasCanvas"),
+                            "interactive_elements": analysis.get("hasButtons", 0) + analysis.get("hasLinks", 0),
+                        },
+                    },
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def validate_selector(self, selector: str) -> Dict[str, Any]:
+        """
+        [Agent Browser] Validate a selector before using it in an action.
+        Use to check if a selector matches elements and how many, preventing blind failures.
+        Returns match count, sample text, and suggestions for ambiguous selectors.
+        Lightweight alternative to find_elements for quick validation.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+                locator = page.locator(selector)
+                count = await locator.count()
+
+                if count == 0:
+                    # Try to provide helpful suggestions
+                    suggestions: List[str] = []
+
+                    # Check if it might be a timing issue
+                    suggestions.append("Element may not exist yet - try wait_for(selector) first")
+
+                    # Check for common selector mistakes
+                    if selector.startswith("#") and " " in selector:
+                        suggestions.append("ID selectors can't contain spaces - check for typos")
+                    if selector.startswith("text=") and " " in selector and '"' not in selector:
+                        suggestions.append("For text with spaces, use quotes: text=\"Sign In\" (exact) or just text=Sign (partial)")
+
+                    return {
+                        "success": True,
+                        "message": f"No elements match '{selector}'",
+                        "data": {
+                            "valid": False,
+                            "count": 0,
+                            "suggestions": suggestions,
+                        },
+                    }
+
+                # Get sample from first element
+                first = locator.first
+                sample_text = ""
+                sample_tag = ""
+                try:
+                    sample_text = ((await first.text_content()) or "").strip()[:100]
+                    sample_tag = await first.evaluate("el => el.tagName.toLowerCase()")
+                except Exception:  # pylint: disable=broad-except
+                    pass
+
+                result_data: Dict[str, Any] = {
+                    "valid": True,
+                    "count": count,
+                    "sample_tag": sample_tag,
+                    "sample_text": sample_text,
+                }
+
+                # Provide guidance for multiple matches
+                if count > 1:
+                    result_data["note"] = f"Multiple matches ({count}) - use click_nth(selector, index) or refine selector"
+                    result_data["suggested_selectors"] = [
+                        f"{selector} >> nth=0",
+                        f"{selector} >> nth={count-1}",
+                    ]
+
+                # Build descriptive message
+                if sample_tag and sample_text:
+                    preview = f"<{sample_tag}>{sample_text[:30]}{'...' if len(sample_text) > 30 else ''}</{sample_tag}>"
+                elif sample_tag:
+                    preview = f"<{sample_tag}> (empty)"
+                else:
+                    preview = "(element)"
+
+                return {
+                    "success": True,
+                    "message": f"Selector matches {count} element(s): {preview}",
+                    "data": result_data,
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {
+                "success": False,
+                "message": f"Invalid selector: {exc}",
+                "data": {"valid": False, "error": str(exc)},
+            }
+
+    # ========== PERCEPTION TOOLS ==========
+
+    async def get_page_markdown(self, selector: Optional[str] = None, max_length: int = 8000) -> Dict[str, Any]:
+        """
+        [Agent Browser] Get page content as a structured markdown-like text.
+        Use this to READ page content (articles, results, dashboards) - not just interactive elements.
+        Returns headings, paragraphs, lists, and data in a clean hierarchical format.
+        Optional selector to focus on a specific section (CSS selector only, e.g. '#results', '.content').
+        max_length limits output size.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # JavaScript to extract page content as markdown-like structure
+                content = await page.evaluate("""
+                    (args) => {
+                        const { selector, maxLength } = args;
+                        const root = selector ? document.querySelector(selector) : document.body;
+                        if (!root) return { error: 'Selector not found' };
+
+                        const lines = [];
+                        let totalLength = 0;
+
+                        function addLine(text, prefix = '') {
+                            if (totalLength >= maxLength) return false;
+                            const line = prefix + text.trim();
+                            if (line) {
+                                lines.push(line);
+                                totalLength += line.length + 1;
+                            }
+                            return true;
+                        }
+
+                        // Track elements we've fully processed to avoid duplicates
+                        const processed = new WeakSet();
+
+                        function processNode(node, depth = 0) {
+                            if (totalLength >= maxLength || depth > 50) return;
+
+                            // Skip already processed
+                            if (processed.has(node)) return;
+
+                            if (node.nodeType === Node.TEXT_NODE) {
+                                // Skip if parent was fully processed (handles text)
+                                if (processed.has(node.parentNode)) return;
+                                const text = node.textContent.trim();
+                                if (text && text.length > 1) addLine(text);
+                                return;
+                            }
+                            if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+                            const el = node;
+                            const tag = el.tagName.toLowerCase();
+
+                            // Skip script, style, svg, etc.
+                            if (['script', 'style', 'svg', 'noscript', 'iframe'].includes(tag)) return;
+
+                            // Check visibility (expensive, do after cheap checks)
+                            const style = window.getComputedStyle(el);
+                            if (style.display === 'none' || style.visibility === 'hidden') return;
+
+                            // Handle headings - mark as processed, don't recurse
+                            if (/^h[1-6]$/.test(tag)) {
+                                const level = parseInt(tag[1]);
+                                const text = el.textContent.trim();
+                                if (text) addLine(text, '#'.repeat(level) + ' ');
+                                processed.add(el);
+                                return;
+                            }
+
+                            // Handle lists - mark as processed, don't recurse
+                            if (tag === 'li') {
+                                const text = el.textContent.trim();
+                                if (text) addLine(text.slice(0, 200), '- ');
+                                processed.add(el);
+                                return;
+                            }
+
+                            // Handle table rows - mark as processed, don't recurse
+                            if (tag === 'tr') {
+                                const cells = Array.from(el.querySelectorAll('th, td'))
+                                    .map(c => c.textContent.trim().slice(0, 50))
+                                    .filter(t => t);
+                                if (cells.length) addLine(cells.join(' | '), '| ');
+                                processed.add(el);
+                                return;
+                            }
+
+                            // Handle pre/code blocks - preserve whitespace
+                            if (tag === 'pre' || tag === 'code') {
+                                const text = el.textContent.trim();
+                                if (text) {
+                                    addLine('```');
+                                    addLine(text.slice(0, 500));
+                                    addLine('```');
+                                }
+                                processed.add(el);
+                                return;
+                            }
+
+                            // Recurse into children (don't extract direct text to avoid duplication)
+                            for (const child of el.childNodes) {
+                                processNode(child, depth + 1);
+                            }
+                        }
+
+                        processNode(root);
+
+                        return {
+                            content: lines.join('\\n'),
+                            lineCount: lines.length,
+                            truncated: totalLength >= maxLength
+                        };
+                    }
+                """, {"selector": selector, "maxLength": max_length})
+
+                if content.get("error"):
+                    return {"success": False, "message": content["error"]}
+
+                return {
+                    "success": True,
+                    "message": f"Extracted {content['lineCount']} lines" + (" (truncated)" if content['truncated'] else ""),
+                    "data": content,
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def get_accessibility_tree(self, selector: Optional[str] = None, max_length: int = 8000) -> Dict[str, Any]:
+        """
+        [Agent Browser] Get the accessibility tree for the page or a specific element.
+        Cleaner than DOM for understanding form structures and component purposes.
+        Returns roles, names, values in a YAML-like hierarchical format.
+        Optional selector to focus on a specific element.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # Use locator.aria_snapshot() - the modern Playwright API
+                if selector:
+                    locator = page.locator(selector).first
+                    count = await page.locator(selector).count()
+                    if count == 0:
+                        return {"success": False, "message": f"Element not found: {selector}"}
+                else:
+                    locator = page.locator("body")
+
+                snapshot = await locator.aria_snapshot()
+
+                if not snapshot:
+                    return {
+                        "success": True,
+                        "message": "No accessibility tree available (page may be empty)",
+                        "data": {"tree": None},
+                    }
+
+                # Truncate if too long
+                if len(snapshot) > max_length:
+                    snapshot = snapshot[:max_length] + "\n... (truncated)"
+
+                return {
+                    "success": True,
+                    "message": "Accessibility tree retrieved",
+                    "data": {"tree": snapshot},
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def find_relative(
+        self,
+        anchor: str,
+        direction: str,
+        target: Optional[str] = None,
+        max_distance: int = 500,
+    ) -> Dict[str, Any]:
+        """
+        [Agent Browser] Find an element spatially relative to an anchor element.
+        Directions: 'above', 'below', 'left', 'right', 'nearest'.
+        Use for finding data near labels (e.g., value below "Total Gain" label).
+        Returns the closest matching element in that direction.
+
+        Note: 'anchor' uses Playwright selectors (text=, css, xpath).
+              'target' uses CSS selectors only (div, .class, #id) - NOT text=.
+        """
+
+        valid_directions = {"above", "below", "left", "right", "nearest"}
+        if direction.lower() not in valid_directions:
+            return {
+                "success": False,
+                "message": f"Invalid direction '{direction}'. Use: {', '.join(valid_directions)}",
+            }
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # Check anchor exists first (fast fail instead of 30s timeout)
+                anchor_locator = page.locator(anchor)
+                anchor_count = await anchor_locator.count()
+                if anchor_count == 0:
+                    return {"success": False, "message": f"Anchor element not found: {anchor}"}
+
+                # Get anchor element's bounding box
+                anchor_el = anchor_locator.first
+                anchor_box = await anchor_el.bounding_box()
+                if not anchor_box:
+                    return {"success": False, "message": f"Anchor element not visible: {anchor}"}
+
+                anchor_center = {
+                    "x": anchor_box["x"] + anchor_box["width"] / 2,
+                    "y": anchor_box["y"] + anchor_box["height"] / 2,
+                }
+
+                # Find candidate elements
+                target_selector = target or "*"
+                result = await page.evaluate("""
+                    (args) => {
+                        const { anchorBox, anchorCenter, direction, targetSelector, maxDistance } = args;
+
+                        // Get all potential target elements
+                        const candidates = document.querySelectorAll(targetSelector);
+                        let best = null;
+                        let bestDistance = Infinity;
+                        let bestScore = Infinity;
+
+                        for (const el of candidates) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) continue;
+
+                            const center = {
+                                x: rect.x + rect.width / 2,
+                                y: rect.y + rect.height / 2
+                            };
+
+                            // Skip the anchor itself
+                            if (Math.abs(center.x - anchorCenter.x) < 5 &&
+                                Math.abs(center.y - anchorCenter.y) < 5) continue;
+
+                            const dx = center.x - anchorCenter.x;
+                            const dy = center.y - anchorCenter.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+
+                            if (distance > maxDistance) continue;
+
+                            let isValid = false;
+                            let score = distance;
+
+                            switch (direction) {
+                                case 'below':
+                                    isValid = dy > 10 && Math.abs(dx) < rect.width + anchorBox.width;
+                                    score = dy + Math.abs(dx) * 0.5;
+                                    break;
+                                case 'above':
+                                    isValid = dy < -10 && Math.abs(dx) < rect.width + anchorBox.width;
+                                    score = -dy + Math.abs(dx) * 0.5;
+                                    break;
+                                case 'right':
+                                    isValid = dx > 10 && Math.abs(dy) < rect.height + anchorBox.height;
+                                    score = dx + Math.abs(dy) * 0.5;
+                                    break;
+                                case 'left':
+                                    isValid = dx < -10 && Math.abs(dy) < rect.height + anchorBox.height;
+                                    score = -dx + Math.abs(dy) * 0.5;
+                                    break;
+                                case 'nearest':
+                                    isValid = true;
+                                    score = distance;
+                                    break;
+                            }
+
+                            if (isValid && score < bestScore) {
+                                bestScore = score;
+                                bestDistance = distance;
+                                const text = (el.textContent || '').trim().slice(0, 200);
+                                best = {
+                                    tag: el.tagName.toLowerCase(),
+                                    text: text,
+                                    id: el.id || null,
+                                    className: el.className || null,
+                                    value: el.value || null,
+                                    distance: Math.round(distance),
+                                    position: { x: Math.round(rect.x), y: Math.round(rect.y) }
+                                };
+
+                                // Generate selector
+                                if (el.id) {
+                                    best.selector = '#' + el.id;
+                                } else if (text && text.length < 30 && !text.includes('\\n')) {
+                                    best.selector = `text="${text}"`;
+                                } else if (el.name) {
+                                    best.selector = `[name="${el.name}"]`;
+                                }
+                            }
+                        }
+
+                        return best;
+                    }
+                """, {
+                    "anchorBox": anchor_box,
+                    "anchorCenter": anchor_center,
+                    "direction": direction.lower(),
+                    "targetSelector": target_selector,
+                    "maxDistance": max_distance,
+                })
+
+                if not result:
+                    return {
+                        "success": True,
+                        "message": f"No element found {direction} of anchor within {max_distance}px",
+                        "data": {"found": False},
+                    }
+
+                return {
+                    "success": True,
+                    "message": f"Found {result['tag']} {direction} of anchor ({result['distance']}px away)",
+                    "data": {"found": True, "element": result},
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    # ========== ADVANCED TOOLS ==========
+
+    async def wait_for_change(
+        self,
+        selector: str,
+        attribute: Optional[str] = None,
+        timeout_ms: int = 10000,
+    ) -> Dict[str, Any]:
+        """
+        [Agent Browser] Wait for an element's content or attribute to change.
+        Use for SPAs that update DOM without navigation (loading states, live data).
+        If attribute is None, watches for text content changes.
+        """
+
+        try:
+            # Get initial state (with lock)
+            async with self._lock:
+                page = await self._ensure_page()
+                locator = page.locator(selector).first
+
+                if attribute:
+                    initial_value = await locator.get_attribute(attribute)
+                else:
+                    initial_value = await locator.text_content()
+
+            # Poll for changes (WITHOUT holding lock - allows other tools to run)
+            loop = asyncio.get_running_loop()
+            start_time = loop.time()
+            poll_interval = 0.1  # 100ms
+
+            while True:
+                elapsed = (loop.time() - start_time) * 1000
+                if elapsed >= timeout_ms:
+                    return {
+                        "success": True,
+                        "message": f"No change detected within {timeout_ms}ms",
+                        "data": {"changed": False, "value": initial_value[:200] if initial_value is not None else None},
+                    }
+
+                await asyncio.sleep(poll_interval)
+
+                # Re-acquire lock briefly to check value
+                async with self._lock:
+                    if attribute:
+                        current_value = await locator.get_attribute(attribute)
+                    else:
+                        current_value = await locator.text_content()
+
+                if current_value != initial_value:
+                    return {
+                        "success": True,
+                        "message": f"Change detected after {int(elapsed)}ms",
+                        "data": {
+                            "changed": True,
+                            "old_value": initial_value[:200] if initial_value is not None else None,
+                            "new_value": current_value[:200] if current_value is not None else None,
+                        },
+                    }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def highlight(self, selector: str, color: str = "red", duration_ms: int = 2000) -> Dict[str, Any]:
+        """
+        [Agent Browser] Highlight an element with a colored border for visual debugging.
+        Use before screenshot() to confirm you're targeting the correct element.
+        Color can be any CSS color (red, blue, #ff0000, rgb(255,0,0), etc.). Duration in ms.
+        """
+
+        # Sanitize color to prevent CSS injection
+        # Allow alphanumeric, #, -, _, (), commas, spaces, %, and . for CSS colors (rgba/hsla need decimals)
+        safe_color = "".join(c for c in color if c.isalnum() or c in "#-_(), %.:")[:50]
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+                locator = page.locator(selector)
+                count = await locator.count()
+
+                if count == 0:
+                    return {"success": False, "message": f"No elements found matching: {selector}"}
+
+                # Apply highlight to each element using Playwright's locator
+                for i in range(min(count, 20)):  # Limit to 20 elements
+                    element = locator.nth(i)
+                    await element.evaluate("""
+                        (el, args) => {
+                            const { color, duration } = args;
+                            const originalOutline = el.style.outline;
+                            const originalOutlineOffset = el.style.outlineOffset;
+
+                            el.style.outline = `3px solid ${color}`;
+                            el.style.outlineOffset = '2px';
+
+                            setTimeout(() => {
+                                el.style.outline = originalOutline || '';
+                                el.style.outlineOffset = originalOutlineOffset || '';
+                            }, duration);
+                        }
+                    """, {"color": safe_color, "duration": duration_ms})
+
+                return {
+                    "success": True,
+                    "message": f"Highlighted {count} element(s) with {safe_color} border for {duration_ms}ms",
+                    "data": {"count": count, "color": safe_color},
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def mock_network(
+        self,
+        url_pattern: str,
+        response_body: str,
+        status: int = 200,
+        content_type: str = "application/json",
+    ) -> Dict[str, Any]:
+        """
+        [Agent Browser] Mock network requests matching a URL pattern.
+        Use for frontend isolation testing by intercepting and mocking API calls.
+        Pattern uses glob matching (e.g., '**/api/users*'). Response body is returned as-is.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # Create route handler
+                async def handle_route(route):
+                    await route.fulfill(
+                        status=status,
+                        content_type=content_type,
+                        body=response_body,
+                    )
+
+                await page.route(url_pattern, handle_route)
+
+                # Track mocked routes for clear_mocks
+                self._mocked_routes.append(url_pattern)
+
+                return {
+                    "success": True,
+                    "message": f"Mocking requests to '{url_pattern}' with status {status}",
+                    "data": {
+                        "pattern": url_pattern,
+                        "status": status,
+                        "content_type": content_type,
+                        "response_preview": response_body[:100] + ("..." if len(response_body) > 100 else ""),
+                    },
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def clear_mocks(self) -> Dict[str, Any]:
+        """
+        [Agent Browser] Clear all network mocks set by mock_network().
+        Call this to restore normal network behavior after testing.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                for pattern in self._mocked_routes:
+                    try:
+                        await page.unroute(pattern)
+                    except Exception:  # pylint: disable=broad-except
+                        pass
+
+                count = len(self._mocked_routes)
+                self._mocked_routes.clear()
+
+                return {
+                    "success": True,
+                    "message": f"Cleared {count} network mock(s)",
+                    "data": {"cleared_count": count},
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
 
 
 def main() -> None:

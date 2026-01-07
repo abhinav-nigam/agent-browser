@@ -570,3 +570,237 @@ async def test_get_agent_guide():
     result = await server.get_agent_guide(section="nonexistent")
     assert result["success"] is True
     assert "content" in result["data"]  # Returns full guide
+
+
+@pytest.mark.asyncio
+async def test_get_page_markdown():
+    """Test get_page_markdown extracts structured content."""
+    server = BrowserServer("test-markdown")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <h1>Calculator Results</h1>
+                <h2>Summary</h2>
+                <ul>
+                    <li>Total Invested: $10,000</li>
+                    <li>Final Value: $15,000</li>
+                </ul>
+                <p>Your investment grew by 50%.</p>
+            `;
+        """)
+
+        result = await server.get_page_markdown()
+        assert result["success"] is True
+        assert "Calculator Results" in result["data"]["content"]
+        assert "Total Invested" in result["data"]["content"]
+        assert result["data"]["lineCount"] > 0
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_find_relative():
+    """Test find_relative locates elements spatially."""
+    server = BrowserServer("test-find-relative")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <div style="position:absolute; top:100px; left:100px;">
+                    <span id="label">Total:</span>
+                </div>
+                <div style="position:absolute; top:130px; left:100px;">
+                    <span id="value">$1,234</span>
+                </div>
+            `;
+        """)
+
+        # Find element below the label
+        result = await server.find_relative("#label", "below")
+        assert result["success"] is True
+        assert result["data"]["found"] is True
+        assert "$1,234" in result["data"]["element"]["text"]
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_highlight():
+    """Test highlight adds visual border to elements."""
+    server = BrowserServer("test-highlight")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        await server.evaluate("""
+            document.body.innerHTML = '<button id="btn">Click Me</button>';
+        """)
+
+        result = await server.highlight("#btn", color="blue", duration_ms=100)
+        assert result["success"] is True
+        assert result["data"]["count"] == 1
+        assert result["data"]["color"] == "blue"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_assert_text_truncation():
+    """Test assert_text truncates long content on failure."""
+    server = BrowserServer("test-assert-truncation")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Create element with very long text
+        await server.evaluate("""
+            document.body.innerHTML = '<div id="content">' + 'x'.repeat(2000) + '</div>';
+        """)
+
+        # Search for text that doesn't exist
+        result = await server.assert_text("#content", "NOT_FOUND_TEXT")
+        assert result["success"] is True
+        assert result["data"]["found"] is False
+        # Check that content is truncated (not full 2000 chars)
+        assert len(result["data"]["text"]) <= 510  # 500 + "..."
+        assert result["data"]["total_length"] == 2000
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_mock_network():
+    """Test mock_network intercepts and mocks API calls."""
+    server = BrowserServer("test-mock-network")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Set up mock
+        result = await server.mock_network(
+            "**/api/test*",
+            '{"mocked": true}',
+            status=200,
+        )
+        assert result["success"] is True
+        assert result["data"]["pattern"] == "**/api/test*"
+
+        # Clear mocks
+        result = await server.clear_mocks()
+        assert result["success"] is True
+        assert result["data"]["cleared_count"] == 1
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_validate_selector():
+    """Test validate_selector checks selector validity and returns match info."""
+    server = BrowserServer("test-validate-selector")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Create test elements
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <button id="single-btn">Click Me</button>
+                <div class="item">Item 1</div>
+                <div class="item">Item 2</div>
+                <div class="item">Item 3</div>
+            `;
+        """)
+
+        # Test valid selector with single match
+        result = await server.validate_selector("#single-btn")
+        assert result["success"] is True
+        assert result["data"]["valid"] is True
+        assert result["data"]["count"] == 1
+        assert result["data"]["sample_tag"] == "button"
+        assert "Click Me" in result["data"]["sample_text"]
+
+        # Test selector with multiple matches
+        result = await server.validate_selector(".item")
+        assert result["success"] is True
+        assert result["data"]["valid"] is True
+        assert result["data"]["count"] == 3
+        assert "note" in result["data"]  # Should have warning about multiple matches
+        assert "suggested_selectors" in result["data"]
+
+        # Test non-existent selector
+        result = await server.validate_selector("#does-not-exist")
+        assert result["success"] is True
+        assert result["data"]["valid"] is False
+        assert result["data"]["count"] == 0
+        assert "suggestions" in result["data"]
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_suggest_next_actions():
+    """Test suggest_next_actions provides context-aware hints."""
+    server = BrowserServer("test-suggest-actions")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Create page with form
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <form>
+                    <input type="text" id="name" placeholder="Name">
+                    <input type="email" id="email" placeholder="Email">
+                    <button type="submit">Submit</button>
+                </form>
+            `;
+        """)
+
+        result = await server.suggest_next_actions()
+        assert result["success"] is True
+        assert "suggestions" in result["data"]
+        assert "page_context" in result["data"]
+        assert result["data"]["page_context"]["has_form"] is True
+
+        # Check that form-related suggestion is present
+        suggestions = result["data"]["suggestions"]
+        assert len(suggestions) > 0
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_browser_status_capabilities():
+    """Test browser_status returns capability flags."""
+    server = BrowserServer("test-capabilities")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.browser_status()
+        assert result["success"] is True
+        assert "capabilities" in result["data"]
+
+        caps = result["data"]["capabilities"]
+        assert caps["javascript"] is True
+        assert caps["cookies"] is True
+        assert caps["network_interception"] is True
+        assert caps["screenshots"] is True
+        # Headless mode affects these
+        assert "clipboard" in caps
+        assert "file_download" in caps
+
+    finally:
+        await server.stop()

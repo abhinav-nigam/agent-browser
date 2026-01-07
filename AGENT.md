@@ -80,6 +80,7 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `select(selector, value)` - Select dropdown option
 - `hover(selector)`, `focus(selector)` - Mouse/focus actions
 - `press(key)` - Keyboard: "Enter", "Tab", "Escape", "ArrowDown"
+- `upload(selector, file_path)` - Upload file to `<input type="file">` (absolute path required)
 
 ### Waiting (explicit waits)
 - `wait(duration_ms)` - Hard wait (avoid when possible)
@@ -113,11 +114,24 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `network()` - Get network request log
 - `dialog(action, prompt_text)` - Handle alert/confirm/prompt
 
-### Agent Utilities (NEW - specifically for AI agents)
-- `browser_status()` - **Call first!** Get capabilities, permissions, viewport, current page
+### Agent Utilities
+- `browser_status()` - **Call first!** Get capabilities, permissions, viewport, current page, and capability flags
 - `check_local_port(port)` - Check if local service is running (localhost/127.0.0.1/::1 only, for security)
 - `page_state()` - Get URL, title, and visible interactive elements with suggested selectors (masks sensitive fields)
 - `find_elements(selector, include_hidden)` - Debug selectors, see all matching elements with details (masks sensitive fields)
+- `suggest_next_actions()` - **NEW!** Context-aware hints based on page state (forms, errors, loading, modals)
+- `validate_selector(selector)` - **NEW!** Validate selector before using - returns count, sample, suggestions
+
+### Perception Tools (NEW - for reading page content)
+- `get_page_markdown(selector?, max_length?)` - **Key for reading!** Extract page content as structured markdown (headings, lists, tables). Note: `selector` uses CSS only (#id, .class)
+- `get_accessibility_tree(selector?, max_length?)` - Get accessibility tree as YAML-like text (roles, names, states)
+- `find_relative(anchor, direction, target?)` - Find element spatially relative to anchor ('above', 'below', 'left', 'right', 'nearest'). Note: `anchor` uses Playwright selectors, `target` uses CSS only
+
+### Advanced Tools
+- `wait_for_change(selector, attribute?)` - Wait for element text/attribute to mutate (for SPAs)
+- `highlight(selector, color?, duration_ms?)` - Visual debugging - draw border around element before screenshot
+- `mock_network(url_pattern, response_body, status?, content_type?)` - Mock API calls for frontend testing
+- `clear_mocks()` - Clear all network mocks
 
 ## Response Format
 
@@ -166,6 +180,70 @@ assert_text(".error-message", "Email is required")
 ```
 click_nth(".product-card", 0)  // First product
 click_nth(".product-card", -1) // Last product (not supported, use count first)
+```
+
+### Read calculation results (Perception)
+```
+get_page_markdown("#results-section")  // Get structured content
+find_relative("text=Total Gain", "below", "span")  // Find value below label
+```
+
+### Debug and verify selectors
+```
+highlight("#submit-btn")  // Visual highlight before screenshot
+screenshot("highlighted")  // Capture to verify
+find_elements("button")  // See all matching buttons
+```
+
+### Wait for SPA updates
+```
+click("#calculate")
+wait_for_change("#results", timeout_ms=5000)  // Wait for content change
+get_page_markdown("#results")  // Read updated results
+```
+
+### Mock API for testing
+```
+mock_network("**/api/calculate*", '{"result": 12345}')
+click("#calculate")  // Will use mocked response
+clear_mocks()  // Restore normal behavior
+```
+
+### Validate before acting (prevent blind failures)
+```
+validate_selector("#submit-btn")  // Check if exists, get count
+// Returns: {valid: true, count: 1, sample_tag: "button", sample_text: "Submit"}
+click("#submit-btn")  // Now safe to click
+```
+
+### Get context-aware help when stuck
+```
+suggest_next_actions()  // Analyze page, get relevant tool suggestions
+// Returns: suggestions for forms, errors, loading states, modals, etc.
+```
+
+## Tool Safety Levels
+
+Use `get_agent_guide(section='safety')` for full details.
+
+| Level | Tools | Retry Strategy |
+|-------|-------|----------------|
+| **SAFE** (read-only) | page_state, validate_selector, get_page_markdown, text, screenshot, assert_* | Retry freely |
+| **MUTATING** | click, fill, type, upload, scroll, goto | Retry with caution |
+| **EXTERNAL** | click buy/submit, fill payment forms | Confirm before retry |
+
+## Capability Negotiation
+
+`browser_status()` returns capability flags to branch logic:
+```json
+{
+  "capabilities": {
+    "javascript": true,
+    "clipboard": false,  // Only in headed mode
+    "file_download": true,
+    "network_interception": true  // mock_network available
+  }
+}
 ```
 
 ## Localhost/Private IP Access
