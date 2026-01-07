@@ -13,6 +13,14 @@ A robust browser automation tool designed for AI agents to control browsers via 
 | ![Claude Demo](demo_claude_research.gif) | ![Gemini Demo](demo_gemini_audit.gif) | ![Interpreter Demo](demo_interpreter_data.gif) |
 | *Autonomous research & data extraction.* | *Cross-page architectural audits.* | *Complex table scraping to structured data.* |
 
+## For AI Agents
+
+**See [AGENT.md](AGENT.md)** for a concise reference specifically designed for AI agents. It includes:
+- Capabilities and selector syntax
+- Tool categories with usage notes
+- Recommended workflows and common patterns
+- Error handling guidance
+
 ## How to use this with AI Coding Assistants
 
 Copy-paste this prompt to let your AI pair-programmer drive `agent-browser` safely:

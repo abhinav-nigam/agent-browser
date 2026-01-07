@@ -318,3 +318,254 @@ async def test_url_and_load_state_tools():
 
     finally:
         await server.stop()
+
+
+# ============== AGENT UTILITY TOOLS TESTS ==============
+
+
+@pytest.mark.asyncio
+async def test_browser_status_before_navigation():
+    """Test browser_status tool returns correct state before and after navigation."""
+    server = BrowserServer("test-browser-status")
+    server.configure(allow_private=True, headless=True)
+    try:
+        # Before any navigation, status should be idle
+        result = await server.browser_status()
+        assert result["success"] is True
+        assert result["data"]["status"] == "idle"
+        assert result["data"]["active_page"] is None
+        assert "localhost" in result["data"]["permissions"]
+        assert result["data"]["viewport"] == {"width": 1280, "height": 900}
+
+        # After navigation, status should be ready
+        await server.goto("http://example.com")
+        result = await server.browser_status()
+        assert result["success"] is True
+        assert result["data"]["status"] == "ready"
+        assert result["data"]["active_page"] is not None
+        assert "example.com" in result["data"]["active_page"]["url"]
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_browser_status_viewport_tracking():
+    """Test browser_status correctly reports viewport after resize."""
+    server = BrowserServer("test-viewport-tracking")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Change viewport
+        await server.viewport(800, 600)
+
+        # Verify browser_status reports actual viewport
+        result = await server.browser_status()
+        assert result["success"] is True
+        assert result["data"]["viewport"]["width"] == 800
+        assert result["data"]["viewport"]["height"] == 600
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_check_local_port_ssrf_protection():
+    """Test check_local_port blocks non-localhost hosts (SSRF protection)."""
+    server = BrowserServer("test-port-ssrf")
+    server.configure(allow_private=True, headless=True)
+
+    # Should block metadata service
+    result = await server.check_local_port(80, "169.254.169.254")
+    assert result["success"] is False
+    assert "not allowed" in result["message"]
+
+    # Should block arbitrary hosts
+    result = await server.check_local_port(80, "evil.com")
+    assert result["success"] is False
+    assert "not allowed" in result["message"]
+
+    # Should allow localhost
+    result = await server.check_local_port(9999, "localhost")
+    assert result["success"] is True
+    # Port likely closed, but host is allowed
+
+    # Should allow 127.0.0.1
+    result = await server.check_local_port(9999, "127.0.0.1")
+    assert result["success"] is True
+
+    # Should allow ::1 (IPv6 localhost)
+    result = await server.check_local_port(9999, "::1")
+    assert result["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_page_state_returns_interactive_elements():
+    """Test page_state returns interactive elements with selectors."""
+    server = BrowserServer("test-page-state")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Create test page with various elements
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <h1>Test Page</h1>
+                <input id="username" type="text" placeholder="Username">
+                <input id="password" type="password" value="secret123">
+                <input id="api_token" type="text" value="tok_abc123">
+                <button id="submit">Submit</button>
+                <a href="/link">Click here</a>
+            `;
+        """)
+
+        result = await server.page_state()
+        assert result["success"] is True
+        assert result["data"]["url"] is not None
+        assert result["data"]["element_count"] > 0
+
+        # Check that password is masked
+        elements = result["data"]["interactive_elements"]
+        password_el = next((e for e in elements if e.get("id") == "password"), None)
+        if password_el and password_el.get("value"):
+            assert password_el["value"] == "[MASKED]"
+
+        # Check that api_token is masked (contains "token")
+        token_el = next((e for e in elements if e.get("id") == "api_token"), None)
+        if token_el and token_el.get("value"):
+            assert token_el["value"] == "[MASKED]"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_find_elements_counts():
+    """Test find_elements correctly counts visible and hidden elements."""
+    server = BrowserServer("test-find-elements")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        # Create test page with visible and hidden elements
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <div class="item" style="display:block">Visible 1</div>
+                <div class="item" style="display:block">Visible 2</div>
+                <div class="item" style="display:none">Hidden 1</div>
+                <div class="item" style="display:none">Hidden 2</div>
+            `;
+        """)
+
+        # Without hidden elements
+        result = await server.find_elements(".item", include_hidden=False)
+        assert result["success"] is True
+        assert result["data"]["visible_count"] == 2
+        assert result["data"]["hidden_count"] == 2
+        assert result["data"]["total_count"] == 4
+        assert len(result["data"]["elements"]) == 2  # Only visible returned
+
+        # With hidden elements
+        result = await server.find_elements(".item", include_hidden=True)
+        assert result["success"] is True
+        assert result["data"]["total_count"] == 4
+        assert len(result["data"]["elements"]) == 4  # All returned
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_find_elements_password_masking():
+    """Test find_elements masks sensitive field values."""
+    server = BrowserServer("test-find-elements-mask")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <input id="user" type="text" value="john">
+                <input id="pass" type="password" value="secret">
+                <input id="api_key" type="text" value="key_123">
+                <input id="ssn_field" type="text" value="123-45-6789">
+            `;
+        """)
+
+        result = await server.find_elements("input")
+        assert result["success"] is True
+
+        elements = {e["id"]: e for e in result["data"]["elements"] if e.get("id")}
+
+        # Regular field should show value
+        assert elements["user"].get("value") == "john"
+
+        # Password type should be masked
+        assert elements["pass"].get("value") == "[MASKED]"
+
+        # api_key (contains "key") should be masked
+        assert elements["api_key"].get("value") == "[MASKED]"
+
+        # ssn_field (contains "ssn") should be masked
+        assert elements["ssn_field"].get("value") == "[MASKED]"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_selector_hinting_on_click_failure():
+    """Test that click failures return helpful selector suggestions."""
+    server = BrowserServer("test-selector-hints")
+    server.configure(allow_private=True, headless=True)
+    try:
+        await server.goto("http://example.com")
+
+        await server.evaluate("""
+            document.body.innerHTML = `
+                <button id="submit-btn">Submit Form</button>
+                <button id="cancel-btn">Cancel</button>
+                <a href="/login">Login</a>
+            `;
+        """)
+
+        # Try to click non-existent element
+        result = await server.click("#nonexistent-button")
+        assert result["success"] is False
+
+        # Should have suggestions
+        if "suggestions" in result:
+            assert len(result["suggestions"]) > 0
+            # Suggestions should include actual page elements
+            selectors = [s["selector"] for s in result["suggestions"]]
+            assert any("submit" in s.lower() or "cancel" in s.lower() or "login" in s.lower() for s in selectors)
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_get_agent_guide():
+    """Test get_agent_guide tool returns documentation for AI agents."""
+    server = BrowserServer("test-agent-guide")
+    server.configure(allow_private=True, headless=True)
+
+    # Test full guide
+    result = await server.get_agent_guide()
+    assert result["success"] is True
+    assert "content" in result["data"]
+    assert "sections_available" in result["data"]
+    assert "First Steps" in result["data"]["content"]
+    assert "Selector Reference" in result["data"]["content"]
+
+    # Test specific section
+    result = await server.get_agent_guide(section="selectors")
+    assert result["success"] is True
+    assert "Selector Reference" in result["data"]["content"]
+    assert "text=" in result["data"]["content"]
+
+    # Test invalid section falls back gracefully
+    result = await server.get_agent_guide(section="nonexistent")
+    assert result["success"] is True
+    assert "content" in result["data"]  # Returns full guide

@@ -14,8 +14,10 @@ import logging
 import re
 import socket
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
+
+import aiohttp
 
 from mcp.server.fastmcp import FastMCP
 from playwright.async_api import (
@@ -231,6 +233,13 @@ class BrowserServer:
         self.server.tool()(self.network)
         self.server.tool()(self.dialog)
 
+        # Agent utilities (call get_agent_guide first for full documentation)
+        self.server.tool()(self.get_agent_guide)
+        self.server.tool()(self.browser_status)
+        self.server.tool()(self.check_local_port)
+        self.server.tool()(self.page_state)
+        self.server.tool()(self.find_elements)
+
     async def start(self, headless: bool = True) -> None:
         """
         Start Playwright and create a fresh browser context.
@@ -295,6 +304,102 @@ class BrowserServer:
         if not self.page:
             raise RuntimeError("Browser failed to start")
         return self.page
+
+    async def _find_similar_elements(self, failed_selector: str, page: Page) -> List[Dict[str, str]]:
+        """
+        Find similar elements on the page when a selector fails.
+        Returns a list of suggestions with selectors and text.
+        """
+
+        try:
+            # Extract key terms from the failed selector for fuzzy matching
+            search_terms: List[str] = []
+            lower_selector = failed_selector.lower()
+
+            # Extract text from text= selectors
+            if "text=" in lower_selector:
+                text_part = failed_selector.split("text=")[-1].strip("'\"")
+                search_terms.append(text_part.lower())
+
+            # Extract ID patterns
+            if "#" in failed_selector:
+                id_part = failed_selector.split("#")[-1].split()[0].split(".")[0]
+                search_terms.append(id_part.lower())
+
+            # Find visible interactive elements
+            suggestions = await page.evaluate("""
+                (searchTerms) => {
+                    const suggestions = [];
+                    const interactable = document.querySelectorAll(
+                        'button, a, input, select, [role="button"], [onclick]'
+                    );
+
+                    for (const el of interactable) {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) continue;
+
+                        const text = (el.textContent || '').trim().slice(0, 50);
+                        const id = el.id || '';
+                        const name = el.name || '';
+                        const placeholder = el.placeholder || '';
+                        const combined = (text + ' ' + id + ' ' + name + ' ' + placeholder).toLowerCase();
+
+                        // Check if any search term matches
+                        let score = 0;
+                        for (const term of searchTerms) {
+                            if (combined.includes(term)) score += 2;
+                            // Partial matches - split by whitespace, hyphens, underscores
+                            for (const word of term.split(/[\\s_-]+/)) {
+                                if (word.length > 2 && combined.includes(word)) score += 1;
+                            }
+                        }
+
+                        // Always include buttons and links with text
+                        if (text && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
+                            score += 0.5;
+                        }
+
+                        if (score > 0 || suggestions.length < 5) {
+                            let selector = '';
+                            if (id) selector = '#' + id;
+                            else if (text && text.length < 30) selector = `text="${text}"`;
+                            else if (name) selector = `[name="${name}"]`;
+
+                            if (selector) {
+                                suggestions.push({
+                                    selector: selector,
+                                    text: text.slice(0, 40),
+                                    tag: el.tagName.toLowerCase(),
+                                    score: score
+                                });
+                            }
+                        }
+
+                        if (suggestions.length >= 10) break;
+                    }
+
+                    // Sort by score descending
+                    suggestions.sort((a, b) => b.score - a.score);
+                    return suggestions.slice(0, 5);
+                }
+            """, search_terms)
+
+            return suggestions  # type: ignore
+        except Exception:  # pylint: disable=broad-except
+            return []
+
+    def _build_selector_hint_message(
+        self, original_error: str, suggestions: List[Dict[str, str]]
+    ) -> str:
+        """Build an error message with selector hints."""
+        if not suggestions:
+            return original_error
+
+        hint_lines = [original_error, "", "Similar visible elements:"]
+        for s in suggestions[:5]:
+            hint_lines.append(f"  - {s['selector']} ({s['tag']}: \"{s['text']}\")")
+
+        return "\n".join(hint_lines)
 
     def _record_console(self, message: ConsoleMessage) -> None:
         """
@@ -365,7 +470,9 @@ class BrowserServer:
 
     async def goto(self, url: str) -> Dict[str, Any]:
         """
-        Navigate to a safe URL after validation.
+        [Agent Browser] Navigate to a URL. Validates URL for security (blocks private IPs by default).
+        Waits for 'domcontentloaded' event. Use --allow-private flag to access localhost.
+        Returns success/failure with the navigated URL.
         """
 
         try:
@@ -380,7 +487,10 @@ class BrowserServer:
 
     async def click(self, selector: str) -> Dict[str, Any]:
         """
-        Click an element matching the selector.
+        [Agent Browser] Click an element matching the selector.
+        Supports Playwright selectors: css, text='...', xpath=..., :has-text().
+        Auto-waits for element to be visible and actionable.
+        On failure, returns suggestions for similar visible elements.
         """
 
         try:
@@ -389,11 +499,27 @@ class BrowserServer:
                 await page.click(selector, timeout=10000)
             return {"success": True, "message": f"Clicked {selector}"}
         except Exception as exc:  # pylint: disable=broad-except
-            return {"success": False, "message": str(exc)}
+            error_msg = str(exc)
+            result: Dict[str, Any] = {"success": False, "message": error_msg}
+
+            # Try to find similar elements for helpful hints
+            try:
+                async with self._lock:
+                    if self.page:
+                        suggestions = await self._find_similar_elements(selector, self.page)
+                        if suggestions:
+                            result["message"] = self._build_selector_hint_message(error_msg, suggestions)
+                            result["suggestions"] = suggestions
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+            return result
 
     async def click_nth(self, selector: str, index: int) -> Dict[str, Any]:
         """
-        Click the nth element matching the selector (0-indexed).
+        [Agent Browser] Click the nth element matching a selector (0-indexed).
+        Use when multiple elements match and you need a specific one (e.g., 2nd button).
+        Prefer this over click() when you get 'strict mode violation' errors.
         """
 
         try:
@@ -410,7 +536,9 @@ class BrowserServer:
 
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
         """
-        Fill a form field.
+        [Agent Browser] Clear and fill a form field with the given value.
+        Clears existing content before typing. Auto-waits for element.
+        Use 'type' instead if you need to trigger key-by-key JS events.
         """
 
         try:
@@ -419,11 +547,27 @@ class BrowserServer:
                 await page.fill(selector, value, timeout=10000)
             return {"success": True, "message": f"Filled {selector}"}
         except Exception as exc:  # pylint: disable=broad-except
-            return {"success": False, "message": str(exc)}
+            error_msg = str(exc)
+            result: Dict[str, Any] = {"success": False, "message": error_msg}
+
+            # Try to find similar elements for helpful hints
+            try:
+                async with self._lock:
+                    if self.page:
+                        suggestions = await self._find_similar_elements(selector, self.page)
+                        if suggestions:
+                            result["message"] = self._build_selector_hint_message(error_msg, suggestions)
+                            result["suggestions"] = suggestions
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+            return result
 
     async def type_text(self, selector: str, text: str) -> Dict[str, Any]:
         """
-        Type text into an element with key events.
+        [Agent Browser] Type text character by character with key events.
+        Slower than 'fill' but triggers JS keydown/keyup handlers.
+        Use for autocomplete, live search, or character-counting inputs.
         """
 
         try:
@@ -436,7 +580,9 @@ class BrowserServer:
 
     async def select(self, selector: str, value: str) -> Dict[str, Any]:
         """
-        Select an option in a dropdown.
+        [Agent Browser] Select an option in a <select> dropdown by its value attribute.
+        The value must match the 'value' attr of an <option>, not the visible text.
+        Use page_state() or find_elements() to discover available option values.
         """
 
         try:
@@ -449,7 +595,9 @@ class BrowserServer:
 
     async def hover(self, selector: str) -> Dict[str, Any]:
         """
-        Hover over a selector.
+        [Agent Browser] Hover the mouse over an element to trigger hover states.
+        Use for dropdown menus, tooltips, or elements that appear on hover.
+        Auto-waits for element to be visible.
         """
 
         try:
@@ -462,7 +610,9 @@ class BrowserServer:
 
     async def focus(self, selector: str) -> Dict[str, Any]:
         """
-        Focus a selector.
+        [Agent Browser] Set keyboard focus on an element without clicking.
+        Use for form fields before typing, or to trigger focus-based JS events.
+        Prefer fill() for inputs - it handles focus automatically.
         """
 
         try:
@@ -475,7 +625,8 @@ class BrowserServer:
 
     async def back(self) -> Dict[str, Any]:
         """
-        Navigate back in history.
+        [Agent Browser] Navigate back in browser history (like clicking Back button).
+        Waits for page load. Use get_url() after to verify the destination.
         """
 
         try:
@@ -488,7 +639,8 @@ class BrowserServer:
 
     async def forward(self) -> Dict[str, Any]:
         """
-        Navigate forward in history.
+        [Agent Browser] Navigate forward in browser history (like clicking Forward button).
+        Only works if you previously navigated back. Waits for page load.
         """
 
         try:
@@ -501,7 +653,9 @@ class BrowserServer:
 
     async def scroll(self, direction: str) -> Dict[str, Any]:
         """
-        Scroll the current page.
+        [Agent Browser] Scroll the page in a direction: 'up', 'down', 'top', 'bottom'.
+        Use to reveal elements below the fold or trigger lazy-loading content.
+        'up'/'down' scroll by 500px; 'top'/'bottom' go to page extremes.
         """
 
         scroll_map = {
@@ -524,7 +678,9 @@ class BrowserServer:
 
     async def wait(self, duration_ms: int = 1000) -> Dict[str, Any]:
         """
-        Wait for a duration in milliseconds.
+        [Agent Browser] Hard wait for a duration in milliseconds.
+        Avoid when possible - prefer wait_for, wait_for_text, or wait_for_url.
+        Only use for animations or when no element change can be detected.
         """
 
         try:
@@ -539,7 +695,9 @@ class BrowserServer:
 
     async def screenshot(self, name: Optional[str] = None) -> Dict[str, Any]:
         """
-        Take a screenshot and return the saved path.
+        [Agent Browser] Take a full-page screenshot (PNG).
+        Returns the file path in data.path. Screenshots are saved to ./screenshots/.
+        Use for visual verification or when you need to see the current page state.
         """
 
         try:
@@ -559,7 +717,9 @@ class BrowserServer:
 
     async def evaluate(self, script: str) -> Dict[str, Any]:
         """
-        Evaluate JavaScript and return the result.
+        [Agent Browser] Execute JavaScript in the browser context and return the result.
+        NOTE: This runs raw JS, NOT Playwright selectors. Use document.querySelector(), not text=.
+        Useful for extracting data, checking state, or performing actions not covered by other tools.
         """
 
         try:
@@ -572,7 +732,8 @@ class BrowserServer:
 
     async def get_url(self) -> Dict[str, Any]:
         """
-        Return the current page URL.
+        [Agent Browser] Get the current page URL.
+        Returns {success: true, data: {url: '...'}}.
         """
 
         async with self._lock:
@@ -581,7 +742,9 @@ class BrowserServer:
 
     async def upload(self, selector: str, file_path: str) -> Dict[str, Any]:
         """
-        Upload a file to a file input.
+        [Agent Browser] Upload a file to an <input type="file"> element.
+        file_path must be an absolute path to an existing file on the local system.
+        Use for file upload forms, image uploads, document submissions.
         """
 
         try:
@@ -595,7 +758,9 @@ class BrowserServer:
 
     async def cookies(self) -> Dict[str, Any]:
         """
-        Return cookies from the current context.
+        [Agent Browser] Get all cookies for the current browser context.
+        Returns data.cookies array with name, value, domain, path, expires, etc.
+        Use to verify authentication state or inspect session data.
         """
 
         try:
@@ -609,7 +774,9 @@ class BrowserServer:
 
     async def storage(self) -> Dict[str, Any]:
         """
-        Dump localStorage as JSON.
+        [Agent Browser] Get localStorage contents as JSON string.
+        Returns data.storage. Use JSON.parse() on result to access individual keys.
+        For sessionStorage, use evaluate('JSON.stringify(sessionStorage)').
         """
 
         try:
@@ -622,7 +789,9 @@ class BrowserServer:
 
     async def console(self) -> Dict[str, Any]:
         """
-        Return collected console log entries.
+        [Agent Browser] Get browser console log entries (errors, warnings, logs).
+        Returns data.entries array with type, text, location. Max 200 entries retained.
+        Use to debug JS errors or verify console.log output.
         """
 
         try:
@@ -634,7 +803,9 @@ class BrowserServer:
 
     async def network(self) -> Dict[str, Any]:
         """
-        Return collected network log entries.
+        [Agent Browser] Get network request log (API calls, resource loads, failures).
+        Returns data.entries array with method, url, status, failure. Max 200 entries.
+        Use to verify API calls were made or debug failed requests.
         """
 
         try:
@@ -648,7 +819,9 @@ class BrowserServer:
 
     async def wait_for(self, selector: str, timeout_ms: int = 10000) -> Dict[str, Any]:
         """
-        Wait for an element matching selector to appear.
+        [Agent Browser] Wait for an element to appear in the DOM.
+        Use after actions that load dynamic content. Most interaction tools auto-wait,
+        so only use this for elements that appear asynchronously after page interactions.
         """
 
         try:
@@ -661,7 +834,9 @@ class BrowserServer:
 
     async def wait_for_text(self, text: str, timeout_ms: int = 10000) -> Dict[str, Any]:
         """
-        Wait for specific text to appear on the page.
+        [Agent Browser] Wait for specific text to appear anywhere on the page.
+        Use after actions that trigger dynamic content (e.g., "Loading complete", "Success").
+        More reliable than wait() for async operations with known completion text.
         """
 
         try:
@@ -674,7 +849,8 @@ class BrowserServer:
 
     async def text(self, selector: str) -> Dict[str, Any]:
         """
-        Get the text content of an element.
+        [Agent Browser] Get the text content of an element.
+        Returns the first matching element's textContent. Useful for verification.
         """
 
         try:
@@ -688,7 +864,9 @@ class BrowserServer:
 
     async def value(self, selector: str) -> Dict[str, Any]:
         """
-        Get the value of an input element.
+        [Agent Browser] Get the current value of an input, textarea, or select element.
+        Use to verify form state or read user input. Returns data.value.
+        For non-input elements, use text() instead.
         """
 
         try:
@@ -701,7 +879,9 @@ class BrowserServer:
 
     async def attr(self, selector: str, attribute: str) -> Dict[str, Any]:
         """
-        Get an attribute value from an element.
+        [Agent Browser] Get an HTML attribute value from an element.
+        Common attributes: href, src, class, data-*, aria-*, disabled.
+        Returns null if attribute doesn't exist. Use value() for input values.
         """
 
         try:
@@ -715,7 +895,9 @@ class BrowserServer:
 
     async def count(self, selector: str) -> Dict[str, Any]:
         """
-        Count elements matching the selector.
+        [Agent Browser] Count how many elements match a selector (includes hidden).
+        Use to verify list lengths, check if elements exist, or before click_nth().
+        Returns data.count. For detailed element info, use find_elements().
         """
 
         try:
@@ -728,7 +910,9 @@ class BrowserServer:
 
     async def press(self, key: str) -> Dict[str, Any]:
         """
-        Press a keyboard key (e.g., Enter, Tab, Escape, ArrowDown).
+        [Agent Browser] Press a keyboard key globally (not tied to an element).
+        Common keys: Enter, Tab, Escape, ArrowDown, ArrowUp, Backspace, Delete.
+        Use after fill() to submit forms, or for keyboard navigation.
         """
 
         try:
@@ -741,7 +925,9 @@ class BrowserServer:
 
     async def reload(self) -> Dict[str, Any]:
         """
-        Reload the current page.
+        [Agent Browser] Reload/refresh the current page (like pressing F5).
+        Waits for DOM content to load. Use to reset page state or retry after errors.
+        Clears form inputs but preserves cookies and localStorage.
         """
 
         try:
@@ -754,7 +940,9 @@ class BrowserServer:
 
     async def viewport(self, width: int, height: int) -> Dict[str, Any]:
         """
-        Set the viewport size.
+        [Agent Browser] Resize the browser viewport to specific dimensions.
+        Use to test responsive layouts. Common sizes: 1280x900 (desktop), 768x1024 (tablet), 375x667 (mobile).
+        May trigger CSS media queries and responsive JS.
         """
 
         try:
@@ -767,7 +955,9 @@ class BrowserServer:
 
     async def assert_visible(self, selector: str) -> Dict[str, Any]:
         """
-        Assert that an element is visible. Returns pass/fail status.
+        [Agent Browser] Check if an element is visible (never throws).
+        Returns {success: true, data: {visible: true/false}} with [PASS]/[FAIL] in message.
+        Use for verification without breaking the flow on failure.
         """
 
         try:
@@ -782,7 +972,9 @@ class BrowserServer:
 
     async def assert_text(self, selector: str, expected: str) -> Dict[str, Any]:
         """
-        Assert that an element contains expected text. Returns pass/fail status.
+        [Agent Browser] Check if an element contains expected text (substring match).
+        Returns [PASS]/[FAIL] in message - never throws. Use for verification without breaking flow.
+        Returns data.found (bool) and data.text (actual content).
         """
 
         try:
@@ -798,7 +990,9 @@ class BrowserServer:
 
     async def clear(self) -> Dict[str, Any]:
         """
-        Clear localStorage and sessionStorage.
+        [Agent Browser] Clear both localStorage and sessionStorage for the current origin.
+        Use to reset app state, log out, or test fresh-user experience.
+        Does NOT clear cookies - use browser restart for full reset.
         """
 
         try:
@@ -811,8 +1005,9 @@ class BrowserServer:
 
     async def dialog(self, action: str, prompt_text: str = "") -> Dict[str, Any]:
         """
-        Handle JavaScript dialogs (alert, confirm, prompt).
-        Action: 'accept' or 'dismiss'. For prompts, provide prompt_text.
+        [Agent Browser] Set up handler for JavaScript dialogs (alert, confirm, prompt).
+        Call BEFORE the action that triggers the dialog. Actions: 'accept' or 'dismiss'.
+        For window.prompt(), provide prompt_text to enter a response.
         """
 
         try:
@@ -831,8 +1026,9 @@ class BrowserServer:
 
     async def wait_for_url(self, pattern: str, timeout_ms: int = 10000) -> Dict[str, Any]:
         """
-        Wait for the URL to contain the specified pattern.
-        Useful for waiting after form submissions or navigation.
+        [Agent Browser] Wait for URL to contain a pattern (substring match).
+        Use after form submissions, login flows, or redirects. E.g., wait_for_url('/dashboard').
+        Returns data.url with the final URL.
         """
 
         import re
@@ -848,7 +1044,9 @@ class BrowserServer:
 
     async def assert_url(self, pattern: str) -> Dict[str, Any]:
         """
-        Assert that the current URL contains the expected pattern. Returns pass/fail status.
+        [Agent Browser] Check if current URL contains a pattern (substring match).
+        Returns [PASS]/[FAIL] in message - never throws. Use for verification.
+        Returns data.match (bool) and data.url (current URL).
         """
 
         try:
@@ -863,8 +1061,9 @@ class BrowserServer:
 
     async def wait_for_load_state(self, state: str = "networkidle") -> Dict[str, Any]:
         """
-        Wait for the page to reach a specific load state.
-        States: 'load', 'domcontentloaded', 'networkidle'
+        [Agent Browser] Wait for page to reach a load state: 'load', 'domcontentloaded', 'networkidle'.
+        'networkidle' waits until no network requests for 500ms - good for SPAs.
+        'domcontentloaded' is faster but may miss async content.
         """
 
         valid_states = {"load", "domcontentloaded", "networkidle"}
@@ -880,6 +1079,530 @@ class BrowserServer:
             return {"success": True, "message": f"Page reached '{state}' state"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": str(exc)}
+
+    # ========== AGENT UTILITY TOOLS ==========
+
+    async def get_agent_guide(self, section: Optional[str] = None) -> Dict[str, Any]:
+        """
+        [Agent Browser] Get the AI agent quick reference guide.
+        **CALL THIS FIRST** to understand how to use this browser automation tool effectively.
+        Returns: selector syntax, tool categories, common patterns, and best practices.
+        Optional: Pass section='selectors'|'tools'|'patterns'|'errors' for specific info.
+        """
+
+        guide_sections = {
+            "intro": """# Agent Browser - AI Agent Quick Reference
+
+## First Steps (Start Here!)
+
+At the start of any browser automation session:
+1. get_agent_guide()      # You're reading this - understand the tools
+2. browser_status()       # Check capabilities, permissions, viewport
+3. check_local_port(5000) # If testing local app, verify it's running
+4. goto("http://...")     # Navigate to target
+5. page_state()           # Get interactive elements with selectors""",
+
+            "selectors": """## Selector Reference
+
+All selectors use **Playwright's selector engine** - NOT standard document.querySelector().
+
+| Type | Syntax | Example |
+|------|--------|---------|
+| CSS | selector | #login-btn, .nav-item, button |
+| Text (exact) | text="..." | text="Sign In" |
+| Text (partial) | text=... | text=Sign |
+| Has text | tag:has-text("...") | button:has-text("Submit") |
+| XPath | xpath=... | xpath=//button[@type="submit"] |
+| Placeholder | placeholder=... | placeholder=Enter email |
+| Nth match | selector >> nth=N | .item >> nth=0 (first) |
+| Chained | parent >> child | #form >> button |
+
+**Important:** :has-text() works in click/fill/wait_for - NOT in evaluate (raw JS).""",
+
+            "tools": """## Tool Categories
+
+### Navigation: goto, back, forward, reload, get_url
+### Interactions: click, click_nth, fill, type, select, hover, focus, press
+### Waiting: wait, wait_for, wait_for_text, wait_for_url, wait_for_load_state
+### Data: screenshot, text, value, attr, count, evaluate
+### Assertions: assert_visible, assert_text, assert_url (return PASS/FAIL, never throw)
+### Page State: scroll, viewport, cookies, storage, clear
+### Debugging: console, network, dialog
+### Agent Utils: get_agent_guide, browser_status, check_local_port, page_state, find_elements
+
+**All interaction tools auto-wait** for elements to be visible and actionable.
+You do NOT need wait_for before click or fill.""",
+
+            "patterns": """## Common Patterns
+
+### Fill form and submit:
+fill("#email", "user@example.com")
+fill("#password", "secret123")
+click("button[type='submit']")
+wait_for_url("/dashboard")
+
+### Click by visible text:
+click("text=Sign In")
+click("button:has-text('Submit')")
+
+### Wait for dynamic content:
+click("#load-more")
+wait_for_text("Results loaded")
+
+### Check form validation:
+click("#submit")
+assert_visible(".error-message")
+assert_text(".error-message", "Email is required")
+
+### Debug selectors:
+find_elements("button")  # See all matching elements with details
+page_state()  # Get all interactive elements with suggested selectors""",
+
+            "errors": """## Error Handling
+
+| Error Pattern | Cause | Solution |
+|---------------|-------|----------|
+| "Timeout exceeded" | Element not found | Use wait_for, check selector |
+| "strict mode violation" | Multiple matches | Use click_nth or more specific selector |
+| "Private IP blocked" | Accessing localhost | Need --allow-private flag |
+| "element not visible" | Hidden/off-screen | Scroll or check display state |
+
+## Security Notes
+- page_state() and find_elements() mask sensitive fields (password, token, key, ssn, cvv, pin)
+- check_local_port() only allows localhost/127.0.0.1/::1 (SSRF protection)
+- Private IPs blocked by default (use --allow-private for local testing)"""
+        }
+
+        if section and section.lower() in guide_sections:
+            content = guide_sections[section.lower()]
+            return {
+                "success": True,
+                "message": f"Agent guide section: {section}",
+                "data": {"section": section, "content": content}
+            }
+
+        # Return full guide
+        full_guide = "\n\n".join([
+            guide_sections["intro"],
+            guide_sections["selectors"],
+            guide_sections["tools"],
+            guide_sections["patterns"],
+            guide_sections["errors"]
+        ])
+
+        return {
+            "success": True,
+            "message": "Agent Browser quick reference guide",
+            "data": {
+                "content": full_guide,
+                "sections_available": list(guide_sections.keys()),
+                "tip": "Call get_agent_guide(section='selectors') for specific sections"
+            }
+        }
+
+    async def browser_status(self) -> Dict[str, Any]:
+        """
+        [Agent Browser] Get browser capabilities and current state.
+        Call this at the start of a session to understand available features.
+        Returns: engine, mode, permissions, viewport, current URL, and readiness status.
+        """
+
+        try:
+            permissions = ["public_internet"]
+            if self.allow_private:
+                permissions.append("localhost")
+                permissions.append("private_networks")
+
+            # Default values
+            viewport = {"width": 1280, "height": 900}
+            active_page = None
+
+            # Get actual page info if browser is started (inside lock for thread safety)
+            if self._started and self.page:
+                async with self._lock:
+                    if self.page:  # Re-check after acquiring lock
+                        actual_viewport = self.page.viewport_size
+                        if actual_viewport:
+                            viewport = actual_viewport
+                        active_page = {
+                            "url": self.page.url,
+                            "title": await self.page.title(),
+                        }
+
+            status_data: Dict[str, Any] = {
+                "status": "ready" if self._started else "idle",
+                "engine": "chromium",
+                "mode": "mcp_server",
+                "headless": self.headless,
+                "permissions": permissions,
+                "viewport": viewport,
+                "screenshot_dir": str(self.screenshot_dir),
+                "selector_engines": [
+                    "css",
+                    "xpath",
+                    "text=",
+                    "id=",
+                    "placeholder=",
+                    ":has-text()",
+                    ">> nth=",
+                ],
+                "auto_wait": True,
+                "default_timeout_ms": 10000,
+                "active_page": active_page,
+            }
+
+            return {
+                "success": True,
+                "message": "Browser status retrieved",
+                "data": status_data,
+            }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def check_local_port(self, port: int, host: str = "localhost") -> Dict[str, Any]:
+        """
+        [Agent Browser] Check if a local service is running and responding.
+        Use this before attempting to navigate to local apps to verify they're up.
+        Host is restricted to localhost/127.0.0.1 for security.
+        Returns: port status, HTTP response code (if applicable), and service hints.
+        """
+
+        # Security: Only allow localhost probing to prevent SSRF
+        allowed_hosts = {"localhost", "127.0.0.1", "::1"}
+        if host.lower() not in allowed_hosts:
+            return {
+                "success": False,
+                "message": f"Host '{host}' not allowed. Only localhost/127.0.0.1 permitted for security.",
+                "data": {"port": port, "host": host, "reachable": False},
+            }
+
+        result: Dict[str, Any] = {
+            "port": port,
+            "host": host,
+            "reachable": False,
+            "http_status": None,
+            "service_hint": None,
+        }
+
+        # Check TCP connectivity using async to avoid blocking the event loop
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=2.0
+            )
+            writer.close()
+            await writer.wait_closed()
+            result["reachable"] = True
+        except asyncio.TimeoutError:
+            return {
+                "success": True,
+                "message": f"Port {port} connection timed out on {host}",
+                "data": result,
+            }
+        except ConnectionRefusedError:
+            return {
+                "success": True,
+                "message": f"Port {port} is not open on {host} (connection refused)",
+                "data": result,
+            }
+        except OSError as exc:
+            return {
+                "success": False,
+                "message": f"Could not check port {port}: {exc}",
+                "data": result,
+            }
+
+        # Try HTTP request to get more info
+        try:
+            url = f"http://{host}:{port}/"
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                async with session.get(url) as response:
+                    result["http_status"] = response.status
+                    # Try to detect service from response headers
+                    server_header = response.headers.get("Server", "")
+                    if server_header:
+                        result["service_hint"] = server_header
+                    # Check for common frameworks in HTML
+                    if response.status == 200:
+                        try:
+                            body = await response.text()
+                            if "<title>" in body.lower():
+                                title_match = re.search(
+                                    r"<title>(.*?)</title>", body, re.IGNORECASE
+                                )
+                                if title_match:
+                                    result["page_title"] = title_match.group(1).strip()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+            message = f"Port {port} is active (HTTP {result['http_status']})"
+            if result.get("page_title"):
+                message += f" - '{result['page_title']}'"
+
+            # Add permission reminder
+            if not self.allow_private:
+                result["warning"] = (
+                    "Private IP access is currently BLOCKED. "
+                    "Restart server with --allow-private to navigate to this service."
+                )
+                message += ". NOTE: --allow-private flag required to navigate"
+
+            return {
+                "success": True,
+                "message": message,
+                "data": result,
+            }
+        except aiohttp.ClientError:
+            # Port is open but not HTTP
+            return {
+                "success": True,
+                "message": f"Port {port} is open but not responding to HTTP",
+                "data": result,
+            }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {
+                "success": True,
+                "message": f"Port {port} is open (HTTP check failed: {exc})",
+                "data": result,
+            }
+
+    async def page_state(self) -> Dict[str, Any]:
+        """
+        [Agent Browser] Get comprehensive current page state snapshot.
+        Returns: URL, title, viewport size, visible interactable elements, and form fields.
+        Use this after actions to understand what changed without taking a screenshot.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # Basic page info
+                url = page.url
+                title = await page.title()
+                viewport = page.viewport_size or {"width": 1280, "height": 900}
+
+                # Get visible interactive elements (limited to prevent huge responses)
+                # Security: Mask password fields and truncate sensitive values
+                interactables = await page.evaluate("""
+                    () => {
+                        const elements = [];
+                        const selectors = [
+                            'a[href]',
+                            'button',
+                            'input:not([type="hidden"])',
+                            'select',
+                            'textarea',
+                            '[role="button"]',
+                            '[onclick]',
+                            '[tabindex]:not([tabindex="-1"])'
+                        ];
+
+                        // Sensitive input types that should have values masked
+                        const sensitiveTypes = ['password', 'secret', 'token', 'key', 'credential', 'ssn', 'cvv', 'pin'];
+
+                        for (const selector of selectors) {
+                            for (const el of document.querySelectorAll(selector)) {
+                                const rect = el.getBoundingClientRect();
+                                // Skip hidden/off-screen elements
+                                if (rect.width === 0 || rect.height === 0) continue;
+                                if (rect.top > window.innerHeight || rect.bottom < 0) continue;
+
+                                const inputType = (el.type || '').toLowerCase();
+                                const inputName = (el.name || '').toLowerCase();
+                                const inputId = (el.id || '').toLowerCase();
+
+                                // Check if this is a sensitive field
+                                const isSensitive = inputType === 'password' ||
+                                    sensitiveTypes.some(t => inputName.includes(t) || inputId.includes(t));
+
+                                // Mask value for sensitive fields
+                                let value = null;
+                                if (el.value) {
+                                    if (isSensitive) {
+                                        value = el.value.length > 0 ? '[MASKED]' : null;
+                                    } else {
+                                        // Truncate long values
+                                        value = el.value.slice(0, 100);
+                                    }
+                                }
+
+                                const info = {
+                                    tag: el.tagName.toLowerCase(),
+                                    type: el.type || null,
+                                    text: (el.textContent || '').trim().slice(0, 50),
+                                    id: el.id || null,
+                                    name: el.name || null,
+                                    placeholder: el.placeholder || null,
+                                    value: value,
+                                    href: el.href ? el.href.slice(0, 200) : null  // Truncate long URLs
+                                };
+
+                                // Generate a suggested selector
+                                if (el.id) {
+                                    info.selector = '#' + el.id;
+                                } else if (el.name) {
+                                    info.selector = `[name="${el.name}"]`;
+                                } else if (info.text && info.text.length > 0 && info.text.length < 30) {
+                                    info.selector = `text="${info.text}"`;
+                                } else if (el.placeholder) {
+                                    info.selector = `[placeholder="${el.placeholder}"]`;
+                                }
+
+                                elements.push(info);
+                                if (elements.length >= 30) break;  // Limit output
+                            }
+                            if (elements.length >= 30) break;
+                        }
+                        return elements;
+                    }
+                """)
+
+                # Get form count
+                form_count = await page.locator("form").count()
+
+                return {
+                    "success": True,
+                    "message": f"Page state: {title or url}",
+                    "data": {
+                        "url": url,
+                        "title": title,
+                        "viewport": viewport,
+                        "form_count": form_count,
+                        "interactive_elements": interactables,
+                        "element_count": len(interactables),
+                    },
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": str(exc)}
+
+    async def find_elements(self, selector: str, include_hidden: bool = False) -> Dict[str, Any]:
+        """
+        [Agent Browser] Find elements matching a selector and return details about each.
+        Useful for debugging selector issues or understanding page structure.
+        Returns: count, and details about each matching element (max 20).
+        When include_hidden=False, only visible elements are counted and returned.
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+                locator = page.locator(selector)
+                total_count = await locator.count()
+
+                elements: List[Dict[str, Any]] = []
+                visible_count = 0
+                hidden_count = 0
+
+                for i in range(total_count):
+                    el = locator.nth(i)
+                    try:
+                        is_visible = await el.is_visible()
+
+                        if is_visible:
+                            visible_count += 1
+                        else:
+                            hidden_count += 1
+                            if not include_hidden:
+                                continue
+
+                        # Limit to 20 elements in output
+                        if len(elements) >= 20:
+                            continue
+
+                        el_info: Dict[str, Any] = {
+                            "index": i,
+                            "visible": is_visible,
+                            "enabled": await el.is_enabled(),
+                            "text": ((await el.text_content()) or "").strip()[:100],
+                        }
+
+                        # Try to get common attributes (mask sensitive values)
+                        for attr in ["id", "name", "class", "type", "href", "placeholder"]:
+                            try:
+                                val = await el.get_attribute(attr)
+                                if val:
+                                    el_info[attr] = val[:100] if len(val) > 100 else val
+                            except Exception:  # pylint: disable=broad-except
+                                pass
+
+                        # Handle value separately - mask sensitive fields
+                        # Must match the same patterns as page_state for consistency
+                        try:
+                            val = await el.get_attribute("value")
+                            if val:
+                                input_type = (el_info.get("type") or "").lower()
+                                input_name = (el_info.get("name") or "").lower()
+                                input_id = (el_info.get("id") or "").lower()
+                                sensitive_patterns = ["password", "secret", "token", "key", "credential", "ssn", "cvv", "pin"]
+                                is_sensitive = (
+                                    input_type == "password" or
+                                    any(p in input_name for p in sensitive_patterns) or
+                                    any(p in input_id for p in sensitive_patterns)
+                                )
+                                el_info["value"] = "[MASKED]" if is_sensitive else val[:100]
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+                        # Get bounding box
+                        try:
+                            bbox = await el.bounding_box()
+                            if bbox:
+                                el_info["position"] = {
+                                    "x": round(bbox["x"]),
+                                    "y": round(bbox["y"]),
+                                    "width": round(bbox["width"]),
+                                    "height": round(bbox["height"]),
+                                }
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+                        elements.append(el_info)
+                    except Exception:  # pylint: disable=broad-except
+                        continue
+
+                # Build accurate message based on what's being returned
+                if include_hidden:
+                    reported_count = total_count
+                    message = f"Found {total_count} element(s) matching '{selector}'"
+                    if hidden_count > 0:
+                        message += f" ({visible_count} visible, {hidden_count} hidden)"
+                else:
+                    reported_count = visible_count
+                    message = f"Found {visible_count} visible element(s) matching '{selector}'"
+                    if hidden_count > 0:
+                        message += f" ({hidden_count} more hidden)"
+
+                if len(elements) < reported_count:
+                    message += f" (showing {len(elements)})"
+
+                return {
+                    "success": True,
+                    "message": message,
+                    "data": {
+                        "selector": selector,
+                        "total_count": total_count,
+                        "visible_count": visible_count,
+                        "hidden_count": hidden_count,
+                        "returned_count": len(elements),
+                        "elements": elements,
+                    },
+                }
+        except Exception as exc:  # pylint: disable=broad-except
+            # Provide helpful hints for selector failures
+            error_msg = str(exc)
+            hints: List[str] = []
+
+            if "Timeout" in error_msg:
+                hints.append("Element may not exist or may be hidden")
+                hints.append("Try wait_for(selector) first or check selector syntax")
+            if "strict mode violation" in error_msg.lower():
+                hints.append("Multiple elements match. Use click_nth or more specific selector")
+
+            result: Dict[str, Any] = {"success": False, "message": error_msg}
+            if hints:
+                result["hints"] = hints
+            return result
 
 
 def main() -> None:
