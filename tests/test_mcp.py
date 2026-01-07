@@ -386,18 +386,19 @@ async def test_check_local_port_ssrf_protection():
     assert result["success"] is False
     assert "not allowed" in result["message"]
 
-    # Should allow localhost
+    # Should allow localhost (not blocked for SSRF)
     result = await server.check_local_port(9999, "localhost")
-    assert result["success"] is True
-    # Port likely closed, but host is allowed
+    # Host is allowed - won't have "not allowed" in message
+    # success may be True or False depending on port/OS, but not blocked
+    assert "not allowed" not in result["message"]
 
     # Should allow 127.0.0.1
     result = await server.check_local_port(9999, "127.0.0.1")
-    assert result["success"] is True
+    assert "not allowed" not in result["message"]
 
     # Should allow ::1 (IPv6 localhost)
     result = await server.check_local_port(9999, "::1")
-    assert result["success"] is True
+    assert "not allowed" not in result["message"]
 
 
 @pytest.mark.asyncio
