@@ -1214,7 +1214,7 @@ page_state()  # Get all interactive elements with suggested selectors""",
                 permissions.append("private_networks")
 
             # Default values
-            viewport = {"width": 1280, "height": 900}
+            viewport: Dict[str, Any] = {"width": 1280, "height": 900}
             active_page = None
 
             # Get actual page info if browser is started (inside lock for thread safety)
@@ -1223,7 +1223,7 @@ page_state()  # Get all interactive elements with suggested selectors""",
                     if self.page:  # Re-check after acquiring lock
                         actual_viewport = self.page.viewport_size
                         if actual_viewport:
-                            viewport = actual_viewport
+                            viewport = dict(actual_viewport)
                         active_page = {
                             "url": self.page.url,
                             "title": await self.page.title(),
