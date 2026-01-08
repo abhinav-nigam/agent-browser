@@ -804,3 +804,57 @@ async def test_browser_status_capabilities():
 
     finally:
         await server.stop()
+
+
+# =============================================================================
+# Cinematic Engine - Phase 1: Voice & Timing Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_generate_voiceover_tool_exists():
+    """Test that generate_voiceover tool is registered and callable."""
+    server = BrowserServer("test-cinematic")
+    # Check tool is registered by looking at server tools
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+    assert "generate_voiceover" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_generate_voiceover_invalid_provider():
+    """Test generate_voiceover returns error for unknown provider."""
+    server = BrowserServer("test-cinematic")
+    result = await server.generate_voiceover(
+        text="Test text",
+        provider="unknown_provider"
+    )
+    assert result["success"] is False
+    assert "Unknown TTS provider" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_audio_duration_tool_exists():
+    """Test that get_audio_duration tool is registered and callable."""
+    server = BrowserServer("test-cinematic")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+    assert "get_audio_duration" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_get_audio_duration_nonexistent_file():
+    """Test get_audio_duration handles missing files gracefully."""
+    server = BrowserServer("test-cinematic")
+    result = await server.get_audio_duration("/nonexistent/path/audio.mp3")
+    assert result["success"] is False
+    # Either mutagen not installed or file not found
+    assert "not installed" in result["message"] or "Could not read" in result["message"] or "Failed" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_cinematic_engine_state_initialized():
+    """Test that Cinematic Engine state variables are properly initialized."""
+    server = BrowserServer("test-cinematic")
+
+    # Check TTS state variables exist
+    assert server._tts_client is None  # Lazy-loaded
+    assert server._audio_cache_dir.name == "audio_cache"

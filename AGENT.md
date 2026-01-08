@@ -134,6 +134,10 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `mock_network(url_pattern, response_body, status?, content_type?)` - Mock API calls for frontend testing
 - `clear_mocks()` - Clear all network mocks
 
+### Cinematic Engine - Video Production (requires `pip install ai-agent-browser[video]`)
+- `generate_voiceover(text, provider?, voice?, speed?)` - Generate TTS audio using OpenAI or ElevenLabs. Cached to avoid redundant API calls
+- `get_audio_duration(path)` - Get audio file duration in ms/sec for timing video actions
+
 ## Response Format
 
 All tools return:
@@ -229,6 +233,18 @@ suggest_next_actions()  // Analyze page, get relevant tool suggestions
 page_state(include_text=True)  // Get elements + text summary
 // Returns: interactive_elements[], text_summary: {headings[], key_text[]}
 // Useful when you need both clickable elements AND page content
+```
+
+### Generate voiceover for video (Cinematic Engine)
+```
+// Generate voiceover audio file (OpenAI TTS)
+result = generate_voiceover("Welcome to our product demo", voice="nova")
+audio_path = result["data"]["path"]
+
+// Get audio duration to pace video actions
+duration = get_audio_duration(audio_path)
+// Returns: {"duration_ms": 3500, "duration_sec": 3.5}
+// Use duration_ms to time your cursor movements and scrolling
 ```
 
 ## Tool Safety Levels
