@@ -19,6 +19,7 @@ At the start of any browser automation session:
 - `browser_status()` tells you if localhost access is enabled (permissions)
 - `check_local_port()` verifies the app is running BEFORE you try to navigate
 - `page_state()` gives you ready-to-use selectors without needing a screenshot
+- Use `page_state(include_text=True)` to also get page headings and key text content
 
 **Note:** This documentation is available via `get_agent_guide()` tool. Call it with `section='selectors'|'tools'|'patterns'|'errors'` for specific sections.
 
@@ -117,7 +118,7 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 ### Agent Utilities
 - `browser_status()` - **Call first!** Get capabilities, permissions, viewport, current page, and capability flags
 - `check_local_port(port)` - Check if local service is running (localhost/127.0.0.1/::1 only, for security)
-- `page_state()` - Get URL, title, and visible interactive elements with suggested selectors (masks sensitive fields)
+- `page_state(include_text?)` - Get URL, title, and visible interactive elements with suggested selectors. Set `include_text=True` for headings + key text summary (masks sensitive fields)
 - `find_elements(selector, include_hidden)` - Debug selectors, see all matching elements with details (masks sensitive fields)
 - `suggest_next_actions()` - **NEW!** Context-aware hints based on page state (forms, errors, loading, modals)
 - `validate_selector(selector)` - **NEW!** Validate selector before using - returns count, sample, suggestions
@@ -220,6 +221,13 @@ click("#submit-btn")  // Now safe to click
 ```
 suggest_next_actions()  // Analyze page, get relevant tool suggestions
 // Returns: suggestions for forms, errors, loading states, modals, etc.
+```
+
+### Get page state with text content
+```
+page_state(include_text=True)  // Get elements + text summary
+// Returns: interactive_elements[], text_summary: {headings[], key_text[]}
+// Useful when you need both clickable elements AND page content
 ```
 
 ## Tool Safety Levels

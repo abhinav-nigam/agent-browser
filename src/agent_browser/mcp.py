@@ -1462,11 +1462,12 @@ Use this to decide how aggressive to be with self-correction loops.
                 "data": result,
             }
 
-    async def page_state(self) -> Dict[str, Any]:
+    async def page_state(self, include_text: bool = False) -> Dict[str, Any]:
         """
         [Agent Browser] Get comprehensive current page state snapshot.
         Returns: URL, title, viewport size, visible interactable elements, and form fields.
         Use this after actions to understand what changed without taking a screenshot.
+        Set include_text=True to also get a text summary of the page content (headings, key text).
         """
 
         try:
@@ -1557,17 +1558,78 @@ Use this to decide how aggressive to be with self-correction loops.
                 # Get form count
                 form_count = await page.locator("form").count()
 
+                # Build response data
+                data: Dict[str, Any] = {
+                    "url": url,
+                    "title": title,
+                    "viewport": viewport,
+                    "form_count": form_count,
+                    "interactive_elements": interactables,
+                    "element_count": len(interactables),
+                }
+
+                # Optionally include text summary
+                if include_text:
+                    text_summary = await page.evaluate("""
+                        () => {
+                            const summary = { headings: [], key_text: [] };
+
+                            // Extract headings (h1-h3)
+                            for (const h of document.querySelectorAll('h1, h2, h3')) {
+                                const text = h.textContent.trim();
+                                if (text && text.length < 100) {
+                                    summary.headings.push({
+                                        level: parseInt(h.tagName[1]),
+                                        text: text
+                                    });
+                                }
+                                if (summary.headings.length >= 10) break;
+                            }
+
+                            // Extract key text content (paragraphs, main content)
+                            const mainContent = document.querySelector('main, article, [role="main"], .content, #content')
+                                || document.body;
+
+                            // Get visible text blocks
+                            const textBlocks = [];
+                            const walker = document.createTreeWalker(
+                                mainContent,
+                                NodeFilter.SHOW_TEXT,
+                                {
+                                    acceptNode: (node) => {
+                                        const parent = node.parentElement;
+                                        if (!parent) return NodeFilter.FILTER_REJECT;
+                                        const tag = parent.tagName.toLowerCase();
+                                        if (['script', 'style', 'noscript'].includes(tag)) {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        const text = node.textContent.trim();
+                                        if (text.length < 10) return NodeFilter.FILTER_REJECT;
+                                        return NodeFilter.FILTER_ACCEPT;
+                                    }
+                                }
+                            );
+
+                            let charCount = 0;
+                            const maxChars = 1000;
+                            while (walker.nextNode() && charCount < maxChars) {
+                                const text = walker.currentNode.textContent.trim();
+                                if (text.length > 10) {
+                                    const truncated = text.slice(0, maxChars - charCount);
+                                    summary.key_text.push(truncated);
+                                    charCount += truncated.length;
+                                }
+                            }
+
+                            return summary;
+                        }
+                    """)
+                    data["text_summary"] = text_summary
+
                 return {
                     "success": True,
                     "message": f"Page state: {title or url}",
-                    "data": {
-                        "url": url,
-                        "title": title,
-                        "viewport": viewport,
-                        "form_count": form_count,
-                        "interactive_elements": interactables,
-                        "element_count": len(interactables),
-                    },
+                    "data": data,
                 }
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": str(exc)}
