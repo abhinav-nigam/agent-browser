@@ -1042,3 +1042,123 @@ async def test_camera_reset():
 
     finally:
         await server.stop()
+
+
+# =============================================================================
+# Cinematic Engine - Phase 4: Post-Production Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_postproduction_tools_exist():
+    """Test that Phase 4 post-production tools are registered."""
+    server = BrowserServer("test-postprod")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+
+    assert "check_environment" in tool_names
+    assert "merge_audio_video" in tool_names
+    assert "add_background_music" in tool_names
+    assert "get_video_duration" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_check_environment():
+    """Test check_environment returns environment status."""
+    server = BrowserServer("test-postprod")
+    result = await server.check_environment()
+
+    assert "success" in result
+    assert "data" in result
+    assert "ffmpeg" in result["data"]
+    assert "openai_key" in result["data"]
+    assert "elevenlabs_key" in result["data"]
+    assert "errors" in result["data"]
+    assert "warnings" in result["data"]
+
+
+@pytest.mark.asyncio
+async def test_merge_audio_video_missing_video():
+    """Test merge_audio_video handles missing video file."""
+    server = BrowserServer("test-postprod")
+    result = await server.merge_audio_video(
+        video="/nonexistent/video.webm",
+        audio_tracks=[{"path": "/some/audio.mp3", "start_ms": 0}],
+        output="/output.mp4",
+    )
+
+    assert result["success"] is False
+    assert "not found" in result["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_merge_audio_video_no_tracks():
+    """Test merge_audio_video handles empty audio tracks."""
+    import tempfile
+    import os
+
+    # Create a temporary "video" file so we get past the video check
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+        f.write(b"fake video content")
+        video_path = f.name
+
+    try:
+        server = BrowserServer("test-postprod")
+        result = await server.merge_audio_video(
+            video=video_path,
+            audio_tracks=[],
+            output="/output.mp4",
+        )
+
+        assert result["success"] is False
+        assert "no audio" in result["message"].lower()
+    finally:
+        os.unlink(video_path)
+
+
+@pytest.mark.asyncio
+async def test_add_background_music_missing_video():
+    """Test add_background_music handles missing video file."""
+    server = BrowserServer("test-postprod")
+    result = await server.add_background_music(
+        video="/nonexistent/video.mp4",
+        music="/some/music.mp3",
+        output="/output.mp4",
+    )
+
+    assert result["success"] is False
+    assert "not found" in result["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_add_background_music_missing_music():
+    """Test add_background_music handles missing music file."""
+    import tempfile
+    import os
+
+    # Create a temporary "video" file
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+        f.write(b"fake video content")
+        video_path = f.name
+
+    try:
+        server = BrowserServer("test-postprod")
+        result = await server.add_background_music(
+            video=video_path,
+            music="/nonexistent/music.mp3",
+            output="/output.mp4",
+        )
+
+        assert result["success"] is False
+        assert "not found" in result["message"].lower()
+    finally:
+        os.unlink(video_path)
+
+
+@pytest.mark.asyncio
+async def test_get_video_duration_missing_file():
+    """Test get_video_duration handles missing file."""
+    server = BrowserServer("test-postprod")
+    result = await server.get_video_duration("/nonexistent/video.mp4")
+
+    assert result["success"] is False
+    assert "not found" in result["message"].lower()

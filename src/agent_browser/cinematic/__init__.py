@@ -5,7 +5,7 @@ This package provides tools for creating marketing-grade video content:
 - Phase 1: Voice & Timing (TTS, audio duration)
 - Phase 2: Recording & Virtual Actor (video capture, cursor, annotations)
 - Phase 3: Camera Control (zoom, pan)
-- Phase 4: Post-Production (audio mixing) [planned]
+- Phase 4: Post-Production (audio/video merging, background music)
 - Phase 5: Polish (smooth scrolling, human-like typing) [planned]
 
 Usage:
@@ -31,6 +31,7 @@ from .tts import TTSMixin
 from .recording import RecordingMixin
 from .annotations import AnnotationMixin
 from .camera import CameraMixin
+from .postproduction import PostProductionMixin
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page
@@ -41,10 +42,11 @@ __all__ = [
     "RecordingMixin",
     "AnnotationMixin",
     "CameraMixin",
+    "PostProductionMixin",
 ]
 
 
-class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin):
+class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, PostProductionMixin):
     """
     Combined mixin providing all Cinematic Engine tools.
 
@@ -130,3 +132,9 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin):
         server.tool()(self.camera_zoom)
         server.tool()(self.camera_pan)
         server.tool()(self.camera_reset)
+
+        # Phase 4: Post-Production
+        server.tool()(self.check_environment)
+        server.tool()(self.merge_audio_video)
+        server.tool()(self.add_background_music)
+        server.tool()(self.get_video_duration)

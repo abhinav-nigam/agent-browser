@@ -151,6 +151,12 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `camera_pan(selector, duration_ms?)` - Pan to center on element without zooming
 - `camera_reset(duration_ms?)` - Reset camera to normal 1.0 scale view
 
+**Phase 4: Post-Production** (requires ffmpeg installed)
+- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY)
+- `merge_audio_video(video, audio_tracks, output)` - Merge video with voiceover audio tracks at specific timestamps
+- `add_background_music(video, music, output, volume?, duck_to?)` - Add background music with auto-ducking when speech detected
+- `get_video_duration(path)` - Get video duration in seconds/milliseconds
+
 ## Response Format
 
 All tools return:
@@ -314,6 +320,49 @@ wait(700)
 - Always wait for animation to complete before next action
 - Combine with annotations for professional callout effects
 - Works during video recording to create dynamic visuals
+
+### Post-production workflow (Cinematic Engine)
+```
+// 1. Check environment first
+check_environment()
+// Returns: {ffmpeg: true, openai_key: true, errors: []}
+
+// 2. Generate voiceovers for your script
+vo1 = generate_voiceover("Welcome to our product demo")
+vo2 = generate_voiceover("Here's how to get started")
+vo3 = generate_voiceover("Thanks for watching!")
+
+// 3. Record your demo video
+start_recording(width=1920, height=1080)
+// ... perform browser actions with cursor/camera/annotations ...
+result = stop_recording()
+video_path = result["data"]["path"]  // "videos/xxx.webm"
+
+// 4. Merge voiceovers at specific timestamps
+merge_audio_video(
+    video=video_path,
+    audio_tracks=[
+        {"path": vo1["data"]["path"], "start_ms": 0},
+        {"path": vo2["data"]["path"], "start_ms": 5000},
+        {"path": vo3["data"]["path"], "start_ms": 25000}
+    ],
+    output="demo_with_voiceover.mp4"
+)
+
+// 5. Add background music (optional)
+add_background_music(
+    video="demo_with_voiceover.mp4",
+    music="background_track.mp3",
+    output="final_demo.mp4",
+    volume=0.2  // 20% volume, auto-ducks during speech
+)
+```
+
+**Post-production notes:**
+- Requires ffmpeg installed (`brew install ffmpeg` or https://ffmpeg.org/)
+- `merge_audio_video` positions each audio track at `start_ms` milliseconds
+- `add_background_music` auto-ducks (lowers volume) when speech is detected
+- Output formats: MP4 recommended for wide compatibility
 
 ## Tool Safety Levels
 

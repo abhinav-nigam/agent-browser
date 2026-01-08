@@ -8,6 +8,7 @@ These scripts are injected into the browser page to provide:
 """
 
 # Virtual cursor injection script
+# Uses cubic-bezier easing for natural human-like movement
 CURSOR_SCRIPT = """
 (() => {
     if (document.getElementById('__agent_cursor__')) return;
@@ -22,7 +23,6 @@ CURSOR_SCRIPT = """
         top: 0; left: 0;
         pointer-events: none;
         z-index: 2147483647;
-        transition: transform 0.15s ease-out;
         transform: translate(-100px, -100px);
         filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.3));
     `;
@@ -39,14 +39,16 @@ CURSOR_SCRIPT = """
     style.id = '__agent_cursor_style__';
     style.textContent = `
         @keyframes __agent_ripple__ {
-            to { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
         }
     `;
     document.head.appendChild(style);
 
     window.__agentCursor = {
+        // Human-like easing: fast start, gradual slowdown (ease-out-cubic)
         moveTo: (x, y, duration = 150) => {
-            cursor.style.transition = `transform ${duration}ms ease-out`;
+            cursor.style.transition = `transform ${duration}ms cubic-bezier(0.33, 1, 0.68, 1)`;
             cursor.style.transform = `translate(${x}px, ${y}px)`;
         },
         click: (x, y) => {
@@ -70,18 +72,27 @@ CURSOR_SCRIPT = """
 """
 
 # Annotation injection script
+# Polished styling with backdrop blur, subtle animations
 ANNOTATION_SCRIPT = """
 (() => {
     if (window.__agentAnnotations) return;
 
-    // Add animation style
+    // Add animation styles
     if (!document.getElementById('__agent_annotation_style__')) {
         const style = document.createElement('style');
         style.id = '__agent_annotation_style__';
         style.textContent = `
             @keyframes __agent_fade_in__ {
-                from { opacity: 0; transform: translateY(-10px); }
-                to { opacity: 1; transform: translateY(0); }
+                from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            @keyframes __agent_fade_out__ {
+                from { opacity: 1; transform: scale(1); }
+                to { opacity: 0; transform: scale(0.96); }
+            }
+            @keyframes __agent_subtle_float__ {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-2px); }
             }
         `;
         document.head.appendChild(style);
@@ -103,22 +114,39 @@ ANNOTATION_SCRIPT = """
             el.id = id;
             el.className = '__agent_annotation__';
             el.textContent = text;
+            // Polished annotation styling with gradient, blur, and better shadows
+            const isDark = style === 'dark';
             el.style.cssText = `
                 position: absolute;
                 left: ${x}px; top: ${y}px;
-                padding: 10px 18px;
-                background: ${style === 'dark' ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)'};
-                color: ${style === 'dark' ? '#fff' : '#333'};
-                border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                padding: 12px 20px;
+                background: ${isDark
+                    ? 'linear-gradient(135deg, rgba(30,30,35,0.95) 0%, rgba(45,45,50,0.95) 100%)'
+                    : 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)'};
+                color: ${isDark ? '#f0f0f0' : '#1a1a2e'};
+                border-radius: 10px;
+                border: 1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'};
+                box-shadow:
+                    0 4px 20px rgba(0,0,0,${isDark ? '0.4' : '0.12'}),
+                    0 1px 3px rgba(0,0,0,0.08),
+                    inset 0 1px 0 rgba(255,255,255,${isDark ? '0.05' : '0.5'});
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 500;
-                animation: __agent_fade_in__ 0.3s ease-out;
-                max-width: 300px;
+                letter-spacing: 0.01em;
+                line-height: 1.4;
+                animation: __agent_fade_in__ 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+                max-width: 320px;
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
             `;
             window.__agentAnnotations.container.appendChild(el);
-            if (duration > 0) setTimeout(() => el.remove(), duration);
+            if (duration > 0) {
+                setTimeout(() => {
+                    el.style.animation = '__agent_fade_out__ 0.25s cubic-bezier(0.4, 0, 1, 1) forwards';
+                    setTimeout(() => el.remove(), 250);
+                }, duration - 250);
+            }
             return el;
         },
         remove: (id) => {
@@ -133,9 +161,15 @@ ANNOTATION_SCRIPT = """
 """
 
 # Camera zoom/pan script (for Phase 3)
+# Uses cinematic easing curves for smooth, professional motion
 CAMERA_SCRIPT = """
 (() => {
     if (window.__agentCamera) return;
+
+    // Cinematic easing: slow start, smooth acceleration, gentle stop
+    // Similar to film camera movements
+    const CINEMATIC_EASE = 'cubic-bezier(0.25, 0.1, 0.25, 1)';
+    const SMOOTH_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
     window.__agentCamera = {
         zoom: (selector, level, duration) => {
@@ -149,7 +183,8 @@ CAMERA_SCRIPT = """
             const tx = (vcx - cx) / level;
             const ty = (vcy - cy) / level;
 
-            document.documentElement.style.transition = `transform ${duration}ms ease-in-out`;
+            // Use cinematic easing for smooth zoom
+            document.documentElement.style.transition = `transform ${duration}ms ${CINEMATIC_EASE}`;
             document.documentElement.style.transformOrigin = `${cx}px ${cy}px`;
             document.documentElement.style.transform = `scale(${level}) translate(${tx}px, ${ty}px)`;
             return true;
@@ -165,12 +200,13 @@ CAMERA_SCRIPT = """
             const tx = vcx - cx;
             const ty = vcy - cy;
 
-            document.documentElement.style.transition = `transform ${duration}ms ease-in-out`;
+            document.documentElement.style.transition = `transform ${duration}ms ${CINEMATIC_EASE}`;
             document.documentElement.style.transform = `translate(${tx}px, ${ty}px)`;
             return true;
         },
         reset: (duration) => {
-            document.documentElement.style.transition = `transform ${duration}ms ease-in-out`;
+            // Smooth out easing for reset feels more natural
+            document.documentElement.style.transition = `transform ${duration}ms ${SMOOTH_OUT}`;
             document.documentElement.style.transform = 'none';
         }
     };
