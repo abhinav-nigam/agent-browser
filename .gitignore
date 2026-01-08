@@ -29,6 +29,10 @@ htmlcov/
 # Screenshots (generated during testing)
 screenshots/
 
+# Cinematic Engine artifacts
+audio_cache/
+videos/
+
 # OS
 .DS_Store
 Thumbs.db

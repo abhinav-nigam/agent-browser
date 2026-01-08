@@ -858,3 +858,67 @@ async def test_cinematic_engine_state_initialized():
     # Check TTS state variables exist
     assert server._tts_client is None  # Lazy-loaded
     assert server._audio_cache_dir.name == "audio_cache"
+
+    # Check recording state variables (Phase 2)
+    assert server._recording is False
+    assert server._video_dir.name == "videos"
+    assert server._cursor_injected is False
+
+
+# =============================================================================
+# Cinematic Engine - Phase 2: Recording & Virtual Actor Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_recording_tools_exist():
+    """Test that Phase 2 recording tools are registered."""
+    server = BrowserServer("test-recording")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+
+    assert "start_recording" in tool_names
+    assert "stop_recording" in tool_names
+    assert "recording_status" in tool_names
+    assert "annotate" in tool_names
+    assert "clear_annotations" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_recording_status_initial():
+    """Test recording_status returns not recording initially."""
+    server = BrowserServer("test-recording")
+    result = await server.recording_status()
+
+    assert result["success"] is True
+    assert result["data"]["recording"] is False
+    assert result["data"]["cursor_injected"] is False
+
+
+@pytest.mark.asyncio
+async def test_stop_recording_when_not_recording():
+    """Test stop_recording returns error when not recording."""
+    server = BrowserServer("test-recording")
+    result = await server.stop_recording()
+
+    assert result["success"] is False
+    assert "Not currently recording" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_start_recording_twice_fails():
+    """Test that starting recording twice fails."""
+    server = BrowserServer("test-recording")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        # Start first recording
+        result1 = await server.start_recording()
+        assert result1["success"] is True
+
+        # Try to start second recording
+        result2 = await server.start_recording()
+        assert result2["success"] is False
+        assert "Already recording" in result2["message"]
+
+    finally:
+        await server.stop()

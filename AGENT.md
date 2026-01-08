@@ -135,8 +135,16 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `clear_mocks()` - Clear all network mocks
 
 ### Cinematic Engine - Video Production (requires `pip install ai-agent-browser[video]`)
+**Phase 1: Voice & Timing**
 - `generate_voiceover(text, provider?, voice?, speed?)` - Generate TTS audio using OpenAI or ElevenLabs. Cached to avoid redundant API calls
 - `get_audio_duration(path)` - Get audio file duration in ms/sec for timing video actions
+
+**Phase 2: Recording & Virtual Actor**
+- `start_recording(filename?, width?, height?)` - Start video recording with virtual cursor (recreates context)
+- `stop_recording()` - Stop recording and return video path (WebM format)
+- `recording_status()` - Check if recording, get duration
+- `annotate(text, target?, position?, style?, duration_ms?)` - Add floating text label (for callouts)
+- `clear_annotations()` - Remove all annotations
 
 ## Response Format
 
@@ -245,6 +253,26 @@ audio_path = result["data"]["path"]
 duration = get_audio_duration(audio_path)
 // Returns: {"duration_ms": 3500, "duration_sec": 3.5}
 // Use duration_ms to time your cursor movements and scrolling
+```
+
+### Record a demo video with annotations (Cinematic Engine)
+```
+// 1. Navigate to your app first
+goto("https://example.com")
+
+// 2. Start recording (cursor is automatically injected)
+start_recording(width=1920, height=1080)
+
+// 3. Add callout annotations
+annotate("Click here to sign in", target="#login-btn", position="above", style="dark")
+
+// 4. Perform actions (cursor animates automatically)
+click("#login-btn")
+fill("#email", "user@example.com")
+
+// 5. Stop and get video path
+result = stop_recording()
+// Returns: {"path": "/videos/xxx.webm", "duration_sec": 5.2}
 ```
 
 ## Tool Safety Levels
