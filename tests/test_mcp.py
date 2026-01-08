@@ -922,3 +922,123 @@ async def test_start_recording_twice_fails():
 
     finally:
         await server.stop()
+
+
+# =============================================================================
+# Cinematic Engine - Phase 3: Camera Control Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_camera_tools_exist():
+    """Test that Phase 3 camera tools are registered."""
+    server = BrowserServer("test-camera")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+
+    assert "camera_zoom" in tool_names
+    assert "camera_pan" in tool_names
+    assert "camera_reset" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_camera_zoom_element_not_found():
+    """Test camera_zoom returns error for non-existent selector."""
+    server = BrowserServer("test-camera")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.camera_zoom(
+            selector="#nonexistent-element",
+            level=1.5,
+            duration_ms=100
+        )
+        assert result["success"] is False
+        assert "not found" in result["message"].lower()
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_camera_zoom_success():
+    """Test camera_zoom works on valid selector."""
+    server = BrowserServer("test-camera")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.camera_zoom(
+            selector="h1",
+            level=1.5,
+            duration_ms=100
+        )
+        assert result["success"] is True
+        assert result["data"]["level"] == 1.5
+        assert result["data"]["target"] == "h1"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_camera_pan_element_not_found():
+    """Test camera_pan returns error for non-existent selector."""
+    server = BrowserServer("test-camera")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.camera_pan(
+            selector="#nonexistent-element",
+            duration_ms=100
+        )
+        assert result["success"] is False
+        assert "not found" in result["message"].lower()
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_camera_pan_success():
+    """Test camera_pan works on valid selector."""
+    server = BrowserServer("test-camera")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.camera_pan(
+            selector="p",
+            duration_ms=100
+        )
+        assert result["success"] is True
+        assert result["data"]["target"] == "p"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_camera_reset():
+    """Test camera_reset succeeds."""
+    server = BrowserServer("test-camera")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        # First zoom in
+        await server.camera_zoom(selector="h1", level=2.0, duration_ms=100)
+
+        # Then reset
+        result = await server.camera_reset(duration_ms=100)
+        assert result["success"] is True
+        assert "reset" in result["message"].lower()
+
+    finally:
+        await server.stop()

@@ -146,6 +146,11 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `annotate(text, target?, position?, style?, duration_ms?)` - Add floating text label (for callouts)
 - `clear_annotations()` - Remove all annotations
 
+**Phase 3: Camera Control**
+- `camera_zoom(selector, level?, duration_ms?)` - Zoom into element using CSS transforms (Ken Burns effect). Level: 1.0=normal, 1.5=50% zoom, 2.0=100% zoom
+- `camera_pan(selector, duration_ms?)` - Pan to center on element without zooming
+- `camera_reset(duration_ms?)` - Reset camera to normal 1.0 scale view
+
 ## Response Format
 
 All tools return:
@@ -255,25 +260,60 @@ duration = get_audio_duration(audio_path)
 // Use duration_ms to time your cursor movements and scrolling
 ```
 
-### Record a demo video with annotations (Cinematic Engine)
+### Record a demo video with cursor animation (Cinematic Engine)
 ```
 // 1. Navigate to your app first
 goto("https://example.com")
 
-// 2. Start recording (cursor is automatically injected)
+// 2. Start recording (virtual cursor injected but off-screen)
 start_recording(width=1920, height=1080)
 
-// 3. Add callout annotations
-annotate("Click here to sign in", target="#login-btn", position="above", style="dark")
+// 3. Move cursor to element (MANUAL - for cinematic control)
+evaluate("window.__agentCursor.moveTo(500, 300, 800)")  // x, y, duration_ms
+wait(1000)  // Let animation complete
 
-// 4. Perform actions (cursor animates automatically)
+// 4. Show click effect and perform action
+evaluate("window.__agentCursor.click(500, 300)")  // Ripple effect
 click("#login-btn")
+
+// 5. Add callout annotation
+annotate("Enter your email here", target="#email", position="above", style="dark")
+
+// 6. Move cursor to next element
+evaluate("window.__agentCursor.moveTo(600, 400, 600)")
+wait(700)
 fill("#email", "user@example.com")
 
-// 5. Stop and get video path
+// 7. Stop and get video path
 result = stop_recording()
 // Returns: {"path": "/videos/xxx.webm", "duration_sec": 5.2}
 ```
+
+**Cursor API (via evaluate):**
+- `window.__agentCursor.moveTo(x, y, duration_ms)` - Smooth move to position
+- `window.__agentCursor.click(x, y)` - Show click ripple effect
+- `window.__agentCursor.hide()` / `show()` - Toggle visibility
+
+### Cinematic camera effects (Cinematic Engine)
+```
+// Zoom into an element (Ken Burns effect)
+camera_zoom("header", level=1.5, duration_ms=1000)
+wait(1200)  // Wait for animation
+
+// Pan to another element
+camera_pan("footer", duration_ms=800)
+wait(900)
+
+// Reset to normal view
+camera_reset(duration_ms=600)
+wait(700)
+```
+
+**Camera notes:**
+- Camera uses CSS transforms, preserving responsive layouts (unlike viewport resize)
+- Always wait for animation to complete before next action
+- Combine with annotations for professional callout effects
+- Works during video recording to create dynamic visuals
 
 ## Tool Safety Levels
 

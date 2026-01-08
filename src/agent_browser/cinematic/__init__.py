@@ -4,7 +4,7 @@ Cinematic Engine - Video production tools for AI agents.
 This package provides tools for creating marketing-grade video content:
 - Phase 1: Voice & Timing (TTS, audio duration)
 - Phase 2: Recording & Virtual Actor (video capture, cursor, annotations)
-- Phase 3: Camera Control (zoom, pan) [planned]
+- Phase 3: Camera Control (zoom, pan)
 - Phase 4: Post-Production (audio mixing) [planned]
 - Phase 5: Polish (smooth scrolling, human-like typing) [planned]
 
@@ -30,6 +30,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from .tts import TTSMixin
 from .recording import RecordingMixin
 from .annotations import AnnotationMixin
+from .camera import CameraMixin
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page
@@ -39,10 +40,11 @@ __all__ = [
     "TTSMixin",
     "RecordingMixin",
     "AnnotationMixin",
+    "CameraMixin",
 ]
 
 
-class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin):
+class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin):
     """
     Combined mixin providing all Cinematic Engine tools.
 
@@ -123,3 +125,8 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin):
         server.tool()(self.recording_status)
         server.tool()(self.annotate)
         server.tool()(self.clear_annotations)
+
+        # Phase 3: Camera Control
+        server.tool()(self.camera_zoom)
+        server.tool()(self.camera_pan)
+        server.tool()(self.camera_reset)
