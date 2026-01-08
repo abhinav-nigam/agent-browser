@@ -159,7 +159,7 @@ Options:
 
 ## What Can It Do?
 
-agent-browser provides **50 browser automation tools** organized into categories:
+agent-browser provides **68 browser automation tools** organized into categories:
 
 | Category | Tools | Examples |
 |----------|-------|----------|
@@ -173,6 +173,7 @@ agent-browser provides **50 browser automation tools** organized into categories
 | **Agent Utilities** | 7 | `page_state`, `validate_selector`, `suggest_next_actions`, `browser_status` |
 | **Perception** | 3 | `get_page_markdown`, `get_accessibility_tree`, `find_relative` |
 | **Advanced** | 3 | `highlight`, `mock_network`, `clear_mocks` |
+| **Video Production** | 18 | `start_recording`, `generate_voiceover`, `camera_zoom`, `merge_audio_video` |
 
 **For AI agents**: See [AGENT.md](AGENT.md) for a concise reference with selector syntax, common patterns, and tool safety levels.
 
@@ -232,6 +233,89 @@ AI: Let me check that.
     The button exists but is positioned off-screen. Here's a screenshot
     with the button highlighted. The CSS needs adjustment for mobile.
 ```
+
+### Create a Marketing Video
+
+```
+You: "Create a demo video of our checkout flow with voiceover"
+
+AI: I'll create a marketing video with narration.
+    [generates voiceovers for each scene]
+    [starts recording at 1920x1080]
+    [navigates to checkout page]
+    [moves cursor smoothly to cart button]
+    [adds annotation "Click to checkout"]
+    [camera zooms into form fields]
+    [fills form with human-like typing]
+    [stops recording]
+    [merges video with voiceover audio]
+
+    Created checkout_demo.mp4 (45 seconds) with synchronized narration.
+```
+
+## Cinematic Engine (Video Production)
+
+Create marketing-grade videos with AI-controlled browser recordings, voiceovers, and post-production.
+
+### Installation
+
+```bash
+pip install ai-agent-browser[video]
+```
+
+**Requirements:**
+- `OPENAI_API_KEY` environment variable (for TTS)
+- `ffmpeg` installed (for post-production)
+
+### Capabilities
+
+| Phase | Tools | Description |
+|-------|-------|-------------|
+| **Voice & Timing** | `generate_voiceover`, `get_audio_duration` | Generate TTS audio, get timing for sync |
+| **Recording** | `start_recording`, `stop_recording`, `recording_status` | Capture video with virtual cursor |
+| **Annotations** | `annotate`, `clear_annotations` | Floating text callouts |
+| **Camera** | `camera_zoom`, `camera_pan`, `camera_reset` | Ken Burns-style zoom/pan effects |
+| **Post-Production** | `merge_audio_video`, `add_background_music` | Combine video + audio tracks |
+| **Polish** | `smooth_scroll`, `type_human`, `set_presentation_mode` | Human-like interactions |
+
+### Example Workflow
+
+```python
+# 1. Generate voiceovers first (for timing)
+vo1 = generate_voiceover("Welcome to our product demo", voice="nova")
+vo2 = generate_voiceover("Here's how to get started", voice="nova")
+
+# 2. Record browser session with effects
+start_recording(width=1920, height=1080)
+goto("https://example.com")
+annotate("Our Landing Page", style="dark")
+camera_zoom("#hero", level=1.5)
+smooth_scroll("down", amount=500)
+type_human("#search", "AI automation", wpm=60)
+stop_recording()
+
+# 3. Merge voiceovers at specific timestamps
+merge_audio_video(
+    video="recording.webm",
+    audio_tracks=[
+        {"path": vo1["data"]["path"], "start_ms": 0},
+        {"path": vo2["data"]["path"], "start_ms": 8000}
+    ],
+    output="final_demo.mp4"
+)
+```
+
+### Virtual Cursor
+
+The recording includes a virtual cursor with smooth, human-like movement:
+
+```javascript
+// Cursor is controlled via JavaScript injection
+window.__agentCursor.moveTo(x, y, duration_ms)  // Smooth move
+window.__agentCursor.click(x, y)                 // Click with ripple effect
+```
+
+The cursor uses cubic-bezier easing for natural motion, not robotic linear movement.
 
 ## Security Features
 
