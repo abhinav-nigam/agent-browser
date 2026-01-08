@@ -2181,7 +2181,10 @@ Use this to decide how aggressive to be with self-correction loops.
         Returns the closest matching element in that direction.
 
         Note: 'anchor' uses Playwright selectors (text=, css, xpath).
-              'target' uses CSS selectors only (div, .class, #id) - NOT text=.
+              'target' can be:
+                - CSS selector (div, .class, #id)
+                - 'text' - find nearest element with direct text content (recommended for values)
+                - None/omitted - searches all elements (may find containers)
         """
 
         valid_directions = {"above", "below", "left", "right", "nearest"}
@@ -2212,11 +2215,40 @@ Use this to decide how aggressive to be with self-correction loops.
                     "y": anchor_box["y"] + anchor_box["height"] / 2,
                 }
 
-                # Find candidate elements
-                target_selector = target or "*"
+                # Handle special "text" mode vs CSS selector
+                text_mode = target and target.lower() == "text"
+                target_selector = "*" if (not target or text_mode) else target
+
                 result = await page.evaluate("""
                     (args) => {
-                        const { anchorBox, anchorCenter, direction, targetSelector, maxDistance } = args;
+                        const { anchorBox, anchorCenter, direction, targetSelector, maxDistance, textMode } = args;
+
+                        // Helper: Check if element has direct text content (not just child text)
+                        function hasDirectText(el) {
+                            for (const node of el.childNodes) {
+                                if (node.nodeType === Node.TEXT_NODE) {
+                                    const text = node.textContent.trim();
+                                    if (text.length > 0) return true;
+                                }
+                            }
+                            return false;
+                        }
+
+                        // Helper: Check if element is a "leaf" text node (has text, minimal nested elements)
+                        function isLeafText(el) {
+                            const text = (el.textContent || '').trim();
+                            if (!text) return false;
+
+                            // Check direct text content
+                            if (hasDirectText(el)) return true;
+
+                            // Or element with single text-bearing child
+                            const children = Array.from(el.children).filter(c => {
+                                const style = window.getComputedStyle(c);
+                                return style.display !== 'none' && c.textContent.trim();
+                            });
+                            return children.length <= 1 && text.length < 100;
+                        }
 
                         // Get all potential target elements
                         const candidates = document.querySelectorAll(targetSelector);
@@ -2225,8 +2257,20 @@ Use this to decide how aggressive to be with self-correction loops.
                         let bestScore = Infinity;
 
                         for (const el of candidates) {
+                            // Skip script/style/hidden elements
+                            const tag = el.tagName.toLowerCase();
+                            if (['script', 'style', 'noscript', 'meta', 'link'].includes(tag)) continue;
+
                             const rect = el.getBoundingClientRect();
                             if (rect.width === 0 || rect.height === 0) continue;
+
+                            // In text mode, only consider leaf text elements
+                            if (textMode && !isLeafText(el)) continue;
+
+                            const text = (el.textContent || '').trim().slice(0, 200);
+
+                            // Skip empty elements
+                            if (!text && !el.value) continue;
 
                             const center = {
                                 x: rect.x + rect.width / 2,
@@ -2272,9 +2316,8 @@ Use this to decide how aggressive to be with self-correction loops.
                             if (isValid && score < bestScore) {
                                 bestScore = score;
                                 bestDistance = distance;
-                                const text = (el.textContent || '').trim().slice(0, 200);
                                 best = {
-                                    tag: el.tagName.toLowerCase(),
+                                    tag: tag,
                                     text: text,
                                     id: el.id || null,
                                     className: el.className || null,
@@ -2302,6 +2345,7 @@ Use this to decide how aggressive to be with self-correction loops.
                     "direction": direction.lower(),
                     "targetSelector": target_selector,
                     "maxDistance": max_distance,
+                    "textMode": text_mode,
                 })
 
                 if not result:

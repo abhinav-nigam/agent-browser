@@ -126,7 +126,7 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 ### Perception Tools (NEW - for reading page content)
 - `get_page_markdown(selector?, max_length?)` - **Key for reading!** Extract page content as structured markdown (headings, lists, tables). Note: `selector` uses CSS only (#id, .class)
 - `get_accessibility_tree(selector?, max_length?)` - Get accessibility tree as YAML-like text (roles, names, states)
-- `find_relative(anchor, direction, target?)` - Find element spatially relative to anchor ('above', 'below', 'left', 'right', 'nearest'). Note: `anchor` uses Playwright selectors, `target` uses CSS only
+- `find_relative(anchor, direction, target?)` - Find element spatially relative to anchor ('above', 'below', 'left', 'right', 'nearest'). `target` can be CSS selector OR `"text"` to find nearest text content (recommended for reading values)
 
 ### Advanced Tools
 - `wait_for_change(selector, attribute?)` - Wait for element text/attribute to mutate (for SPAs)
@@ -186,7 +186,8 @@ click_nth(".product-card", -1) // Last product (not supported, use count first)
 ### Read calculation results (Perception)
 ```
 get_page_markdown("#results-section")  // Get structured content
-find_relative("text=Total Gain", "below", "span")  // Find value below label
+find_relative("text=Total Gain", "below", "text")  // Find value below label (recommended)
+// "text" mode finds nearest leaf text element, avoiding container elements
 ```
 
 ### Debug and verify selectors
