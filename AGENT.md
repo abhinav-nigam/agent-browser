@@ -157,6 +157,12 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `add_background_music(video, music, output, volume?, duck_to?)` - Add background music with auto-ducking when speech detected
 - `get_video_duration(path)` - Get video duration in seconds/milliseconds
 
+**Phase 5: Polish**
+- `smooth_scroll(direction, amount?, duration_ms?)` - Cinematic smooth scrolling with easing (vs instant jump)
+- `type_human(selector, text, wpm?, variance?)` - Human-like typing with variable speed and pauses after punctuation
+- `set_presentation_mode(enabled)` - Hide scrollbars and enable smooth scroll CSS for cleaner video
+- `freeze_time(timestamp?)` - Mock Date.now() to show consistent timestamps in demos
+
 ## Response Format
 
 All tools return:

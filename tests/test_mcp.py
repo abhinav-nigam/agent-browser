@@ -1162,3 +1162,155 @@ async def test_get_video_duration_missing_file():
 
     assert result["success"] is False
     assert "not found" in result["message"].lower()
+
+
+# =============================================================================
+# Cinematic Engine - Phase 5: Polish Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_polish_tools_exist():
+    """Test that Phase 5 polish tools are registered."""
+    server = BrowserServer("test-polish")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+
+    assert "smooth_scroll" in tool_names
+    assert "type_human" in tool_names
+    assert "set_presentation_mode" in tool_names
+    assert "freeze_time" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_smooth_scroll_invalid_direction():
+    """Test smooth_scroll handles invalid direction."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.smooth_scroll(
+            direction="sideways",
+            duration_ms=100
+        )
+        assert result["success"] is False
+        assert "invalid" in result["message"].lower()
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_smooth_scroll_down():
+    """Test smooth_scroll scrolls down."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.smooth_scroll(
+            direction="down",
+            amount=200,
+            duration_ms=100
+        )
+        assert result["success"] is True
+        assert result["data"]["direction"] == "down"
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_type_human_element_not_found():
+    """Test type_human handles missing element."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        result = await server.type_human(
+            selector="#nonexistent-input",
+            text="Hello",
+            wpm=120
+        )
+        assert result["success"] is False
+        assert "not found" in result["message"].lower()
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_type_human_success():
+    """Test type_human types text into input."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        # Create a test input
+        await server.evaluate("""
+            document.body.innerHTML = '<input type="text" id="test-input">';
+        """)
+
+        result = await server.type_human(
+            selector="#test-input",
+            text="Hi",
+            wpm=300,  # Fast for testing
+            variance=0.1
+        )
+        assert result["success"] is True
+        assert result["data"]["wpm"] == 300
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_set_presentation_mode():
+    """Test set_presentation_mode enables/disables mode."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        # Enable
+        result = await server.set_presentation_mode(enabled=True)
+        assert result["success"] is True
+        assert result["data"]["presentation_mode"] is True
+
+        # Disable
+        result = await server.set_presentation_mode(enabled=False)
+        assert result["success"] is True
+        assert result["data"]["presentation_mode"] is False
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_freeze_time():
+    """Test freeze_time freezes and restores time."""
+    server = BrowserServer("test-polish")
+    server.configure(allow_private=True, headless=True)
+
+    try:
+        await server.goto("http://example.com")
+
+        # Freeze time
+        result = await server.freeze_time(timestamp="2024-06-15T10:30:00")
+        assert result["success"] is True
+        assert result["data"]["frozen_at"] == "2024-06-15T10:30:00"
+
+        # Restore time
+        result = await server.freeze_time(timestamp=None)
+        assert result["success"] is True
+        assert result["data"]["frozen_at"] is None
+
+    finally:
+        await server.stop()

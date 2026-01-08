@@ -6,7 +6,7 @@ This package provides tools for creating marketing-grade video content:
 - Phase 2: Recording & Virtual Actor (video capture, cursor, annotations)
 - Phase 3: Camera Control (zoom, pan)
 - Phase 4: Post-Production (audio/video merging, background music)
-- Phase 5: Polish (smooth scrolling, human-like typing) [planned]
+- Phase 5: Polish (smooth scrolling, human-like typing, presentation mode)
 
 Usage:
     class BrowserServer(CinematicMixin):
@@ -32,6 +32,7 @@ from .recording import RecordingMixin
 from .annotations import AnnotationMixin
 from .camera import CameraMixin
 from .postproduction import PostProductionMixin
+from .polish import PolishMixin
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page
@@ -43,10 +44,11 @@ __all__ = [
     "AnnotationMixin",
     "CameraMixin",
     "PostProductionMixin",
+    "PolishMixin",
 ]
 
 
-class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, PostProductionMixin):
+class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, PostProductionMixin, PolishMixin):
     """
     Combined mixin providing all Cinematic Engine tools.
 
@@ -138,3 +140,9 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
         server.tool()(self.merge_audio_video)
         server.tool()(self.add_background_music)
         server.tool()(self.get_video_duration)
+
+        # Phase 5: Polish
+        server.tool()(self.smooth_scroll)
+        server.tool()(self.type_human)
+        server.tool()(self.set_presentation_mode)
+        server.tool()(self.freeze_time)
