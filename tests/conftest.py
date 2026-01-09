@@ -54,7 +54,9 @@ TEST_PAGE_HTML = """
 """.strip()
 
 # Data URL for instant page loads (no network)
-TEST_PAGE_DATA_URL = f"data:text/html,{TEST_PAGE_HTML.replace(' ', '%20').replace('<', '%3C').replace('>', '%3E').replace('\"', '%22').replace('#', '%23')}"
+# Note: Building URL outside f-string for Python 3.11 compatibility (no backslash in f-strings)
+_encoded_html = TEST_PAGE_HTML.replace(' ', '%20').replace('<', '%3C').replace('>', '%3E').replace('"', '%22').replace('#', '%23')
+TEST_PAGE_DATA_URL = f"data:text/html,{_encoded_html}"
 
 
 @pytest_asyncio.fixture
