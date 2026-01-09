@@ -42,3 +42,4 @@ Thumbs.db
 
 # MCP session
 *.pkl
+music_cache/
