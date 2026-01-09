@@ -32,7 +32,16 @@ class TTSMixin:
         speed: float = 1.0,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Generate voiceover audio from text using TTS.
+        [Cinematic Engine - PHASE 1] Generate voiceover audio from text using TTS.
+
+        IMPORTANT: Call this FIRST before recording! Audio duration determines
+        video pacing. Use get_audio_duration() to know exact timing.
+
+        Workflow:
+        1. generate_voiceover() -> get audio path
+        2. get_audio_duration() -> know timing (e.g., 8 seconds)
+        3. start_recording() -> record video paced to audio duration
+        4. merge_audio_video() -> combine in post-production
 
         Lazy-loads the TTS client on first call. Caches audio files to avoid
         redundant API costs during retakes.
@@ -41,11 +50,20 @@ class TTSMixin:
             text: The text to convert to speech
             provider: TTS provider - "openai" (default) or "elevenlabs"
             voice: Voice ID - OpenAI: alloy, echo, fable, onyx, nova, shimmer
-                   ElevenLabs: use voice ID from their dashboard
+                   ElevenLabs: use voice ID like "21m00Tcm4TlvDq8ikWAM" (Rachel)
             speed: Speech speed multiplier (0.25 to 4.0, default 1.0)
 
         Returns:
             {"success": True, "data": {"path": "/path/to/audio.mp3", "cached": bool}}
+
+        Example:
+            vo = generate_voiceover(
+                text="Welcome to our product demo.",
+                provider="elevenlabs",
+                voice="21m00Tcm4TlvDq8ikWAM"  # Rachel voice
+            )
+            duration = get_audio_duration(vo["data"]["path"])
+            # Now record video paced to duration["data"]["duration_sec"]
 
         Requires: pip install ai-agent-browser[video]
         """

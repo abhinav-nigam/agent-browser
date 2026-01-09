@@ -30,23 +30,27 @@ class PostProductionMixin:
 
     async def check_environment(self) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Check if required tools and API keys are available.
+        [Cinematic Engine] CALL THIS FIRST! Check environment and get workflow guide.
 
-        Verifies:
-        - ffmpeg installation (required for video processing)
-        - OPENAI_API_KEY environment variable (for TTS)
-        - ELEVENLABS_API_KEY environment variable (optional, for ElevenLabs TTS)
+        Returns environment status AND complete workflow guide for creating videos.
+        This is the entry point for the Cinematic Engine - always call first!
 
         Returns:
             {
                 "success": True,
                 "data": {
                     "ffmpeg": True/False,
-                    "ffmpeg_path": "/path/to/ffmpeg" or None,
                     "openai_key": True/False,
                     "elevenlabs_key": True/False,
-                    "errors": ["list of issues"],
-                    "warnings": ["list of optional missing items"]
+                    "jamendo_key": True/False,
+                    "errors": [...],
+                    "warnings": [...],
+                    "workflow": {
+                        "phase1_preparation": [...],
+                        "phase2_recording": [...],
+                        "phase3_postproduction": [...]
+                    },
+                    "best_practices": [...]
                 }
             }
         """
@@ -96,6 +100,55 @@ class PostProductionMixin:
             except Exception:  # pylint: disable=broad-except
                 pass
 
+        # Workflow guide for agents
+        workflow = {
+            "phase1_preparation": {
+                "description": "Do this BEFORE recording! Audio timing drives video pacing.",
+                "steps": [
+                    "1. generate_voiceover(text, provider='elevenlabs', voice='21m00Tcm4TlvDq8ikWAM') - Create narration",
+                    "2. get_audio_duration(path) - Know exact timing (e.g., 8 seconds)",
+                    "3. list_stock_music(query='corporate', instrumental=True) - Find background music",
+                    "4. download_stock_music(url) - Download selected track",
+                ]
+            },
+            "phase2_recording": {
+                "description": "Record browser with effects. Pace actions to match voiceover duration.",
+                "steps": [
+                    "1. start_recording(width=1920, height=1080) - Begin capture",
+                    "2. set_presentation_mode(enabled=True) - Hide scrollbars for clean visuals",
+                    "3. goto(url) - Navigate to your page",
+                    "4. annotate(text, style='dark', position='top-right') - Add floating callouts",
+                    "5. spotlight(selector, style='focus', color='#3b82f6') - Highlight elements",
+                    "6. camera_zoom(selector, level=1.5, duration_ms=1000) - Cinematic zoom",
+                    "7. wait(2000) - CRITICAL: Wait longer than animation duration!",
+                    "8. clear_spotlight() - Clear before applying new effects",
+                    "9. smooth_scroll(direction='down', amount=300) - Professional scrolling",
+                    "10. stop_recording() - End capture, get video path",
+                ]
+            },
+            "phase3_postproduction": {
+                "description": "Add audio and polish. Order matters!",
+                "steps": [
+                    "1. merge_audio_video(video, audio_tracks=[{path, start_ms}]) - Add voiceover",
+                    "2. add_background_music(video, music, music_volume=0.15, voice_volume=1.3) - Layer music",
+                    "3. add_text_overlay(video, text, position='center', start_sec=0, end_sec=3) - Add titles",
+                    "4. concatenate_videos(videos, transition='fade') - Join multiple scenes",
+                ]
+            },
+        }
+
+        best_practices = [
+            "ALWAYS generate voiceover FIRST - audio duration determines video pacing",
+            "Use set_presentation_mode(True) for cleaner visuals without scrollbars",
+            "Wait LONGER than animation duration: camera_zoom(duration_ms=1000) needs wait(1500)",
+            "Combine spotlight() + annotate() for maximum viewer impact",
+            "Use spotlight(style='focus') for dramatic emphasis (ring + dim combined)",
+            "Keep music_volume at 0.10-0.15 (10-15%), boost voice_volume to 1.3 (130%)",
+            "Always clear_spotlight() before applying a new spotlight effect",
+            "Use add_text_overlay() in post-production (more flexible than annotate)",
+            "Record at 1920x1080 for professional quality",
+        ]
+
         return {
             "success": len(errors) == 0,
             "message": "Environment ready" if len(errors) == 0 else f"{len(errors)} issue(s) found",
@@ -108,6 +161,8 @@ class PostProductionMixin:
                 "jamendo_key": jamendo_key,
                 "errors": errors,
                 "warnings": warnings,
+                "workflow": workflow,
+                "best_practices": best_practices,
             },
         }
 
@@ -118,10 +173,10 @@ class PostProductionMixin:
         output: str,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Merge video with multiple audio tracks.
+        [Cinematic Engine - PHASE 3] Merge video with multiple audio tracks.
 
         Combines a video file with one or more audio tracks (voiceovers),
-        positioning each track at a specific timestamp.
+        positioning each track at a specific timestamp. Call AFTER stop_recording().
 
         Args:
             video: Path to the input video file (WebM from recording)
@@ -288,10 +343,11 @@ class PostProductionMixin:
         fade_out_sec: float = 2.0,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Add background music to a video.
+        [Cinematic Engine - PHASE 3] Add background music to a video.
 
         Adds a music track underneath existing audio (voiceover). The music
         is set to a low volume so it doesn't overpower speech.
+        Call AFTER merge_audio_video() for best results.
 
         Args:
             video: Path to input video (should already have voiceover audio)
@@ -503,10 +559,11 @@ class PostProductionMixin:
         fade_out_sec: float = 0.5,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Add text overlay/title to a video.
+        [Cinematic Engine - PHASE 3] Add text overlay/title to a video.
 
         Burns text onto the video at a specified position and time range.
         Perfect for titles, captions, lower thirds, and call-to-action text.
+        Call AFTER add_background_music() or merge_audio_video().
 
         Args:
             video: Path to input video file
@@ -675,10 +732,11 @@ class PostProductionMixin:
         transition_duration_sec: float = 0.5,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Concatenate multiple video clips with transitions.
+        [Cinematic Engine - PHASE 3] Concatenate multiple video clips with transitions.
 
         Joins video segments together with professional transitions between them.
         Perfect for combining multiple recording scenes into one final video.
+        Use when you have recorded multiple scenes separately.
 
         Args:
             videos: List of video file paths to concatenate (in order)

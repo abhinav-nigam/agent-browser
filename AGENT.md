@@ -135,6 +135,7 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `clear_mocks()` - Clear all network mocks
 
 ### Cinematic Engine - Video Production (requires `pip install ai-agent-browser[video]`)
+
 **Phase 1: Voice & Timing**
 - `generate_voiceover(text, provider?, voice?, speed?)` - Generate TTS audio using OpenAI or ElevenLabs. Cached to avoid redundant API calls
 - `get_audio_duration(path)` - Get audio file duration in ms/sec for timing video actions
@@ -143,8 +144,10 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `start_recording(filename?, width?, height?)` - Start video recording with virtual cursor (recreates context)
 - `stop_recording()` - Stop recording and return video path (WebM format)
 - `recording_status()` - Check if recording, get duration
-- `annotate(text, target?, position?, style?, duration_ms?)` - Add floating text label (for callouts)
+- `annotate(text, target?, position?, style?, duration_ms?)` - Add floating text label (for callouts). Positions: above, below, left, right, top-right, bottom-left, center
 - `clear_annotations()` - Remove all annotations
+- `spotlight(selector, style?, color?, pulse_ms?, dim_opacity?)` - Cinematic highlight effects. Styles: "ring" (pulsing border), "spotlight" (dims page except element), "focus" (both combined)
+- `clear_spotlight()` - Remove all spotlight effects
 
 **Phase 3: Camera Control**
 - `camera_zoom(selector, level?, duration_ms?)` - Zoom into element using CSS transforms (Ken Burns effect). Level: 1.0=normal, 1.5=50% zoom, 2.0=100% zoom
@@ -154,8 +157,10 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 **Phase 4: Post-Production** (requires ffmpeg installed)
 - `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY, JAMENDO_CLIENT_ID)
 - `merge_audio_video(video, audio_tracks, output)` - Merge video with voiceover audio tracks at specific timestamps
-- `add_background_music(video, music, output, volume?, duck_to?)` - Add background music with auto-ducking when speech detected
+- `add_background_music(video, music, output, music_volume?, voice_volume?, fade_in_sec?, fade_out_sec?)` - Add background music with volume control and fade effects
 - `get_video_duration(path)` - Get video duration in seconds/milliseconds
+- `add_text_overlay(video, text, output, position?, start_sec?, end_sec?, font_size?, font_color?, bg_color?, fade_in_sec?, fade_out_sec?)` - Add title/caption overlays with timing and fade effects
+- `concatenate_videos(videos, output, transition?, transition_duration_sec?)` - Join multiple clips with transitions (fade, wipe, slide, dissolve)
 - `list_stock_music(query?, tags?, instrumental?, speed?, min_duration?, max_duration?)` - Search Jamendo for CC-licensed music (requires JAMENDO_CLIENT_ID)
 - `download_stock_music(url, output?, filename?)` - Download a stock music track to local cache
 
@@ -329,51 +334,182 @@ wait(700)
 - Combine with annotations for professional callout effects
 - Works during video recording to create dynamic visuals
 
-### Post-production workflow (Cinematic Engine)
+### Complete video production workflow (Cinematic Engine)
 ```
-// 1. Check environment first
+// ============================================
+// PHASE 1: PREPARATION (do this first!)
+// ============================================
+
+// 1. Check environment
 check_environment()
-// Returns: {ffmpeg: true, openai_key: true, errors: []}
+// Returns: {ffmpeg: true, elevenlabs_key: true, jamendo_key: true, errors: []}
 
-// 2. Generate voiceovers for your script
-vo1 = generate_voiceover("Welcome to our product demo")
-vo2 = generate_voiceover("Here's how to get started")
-vo3 = generate_voiceover("Thanks for watching!")
+// 2. Generate voiceover FIRST - timing drives everything
+vo = generate_voiceover(
+    text="Welcome to our product demo. Watch the key features in action.",
+    voice="21m00Tcm4TlvDq8ikWAM",  // ElevenLabs Rachel
+    provider="elevenlabs"
+)
+vo_duration = get_audio_duration(vo["data"]["path"])
+// Know your audio is ~8 seconds - plan video actions accordingly
 
-// 3. Record your demo video
+// 3. Find background music
+tracks = list_stock_music(query="corporate inspiring", instrumental=true, speed="medium")
+music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+
+// ============================================
+// PHASE 2: RECORDING (visual capture)
+// ============================================
+
 start_recording(width=1920, height=1080)
-// ... perform browser actions with cursor/camera/annotations ...
-result = stop_recording()
-video_path = result["data"]["path"]  // "videos/xxx.webm"
+set_presentation_mode(enabled=true)  // Hide scrollbars
 
-// 4. Merge voiceovers at specific timestamps
+// Navigate
+goto("https://example.com")
+wait(500)
+
+// Add annotation callout
+annotate("Welcome!", style="dark", position="top-right")
+wait(2000)
+
+// Spotlight with focus effect (ring + dim)
+spotlight(selector="h1", style="focus", color="#3b82f6", dim_opacity=0.7)
+wait(3000)
+clear_spotlight()
+
+// Camera zoom
+camera_zoom(selector="h1", level=1.5, duration_ms=1000)
+wait(1500)
+camera_reset(duration_ms=800)
+wait(500)
+
+// Smooth scroll
+clear_annotations()
+smooth_scroll(direction="down", amount=300, duration_ms=1000)
+wait(500)
+
+// Ring highlight on content
+spotlight(selector="p", style="ring", color="#10b981", pulse_ms=1200)
+annotate("Key information", style="light", position="right")
+wait(2000)
+
+// Cleanup
+clear_spotlight()
+clear_annotations()
+result = stop_recording()
+
+// ============================================
+// PHASE 3: POST-PRODUCTION (audio + polish)
+// ============================================
+
+raw_video = result["data"]["path"]
+
+// Merge voiceover (start at 1 second)
 merge_audio_video(
-    video=video_path,
-    audio_tracks=[
-        {"path": vo1["data"]["path"], "start_ms": 0},
-        {"path": vo2["data"]["path"], "start_ms": 5000},
-        {"path": vo3["data"]["path"], "start_ms": 25000}
-    ],
-    output="demo_with_voiceover.mp4"
+    video=raw_video,
+    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000}],
+    output="videos/with_voice.mp4"
 )
 
-// 5. Find and add royalty-free background music (optional)
-tracks = list_stock_music(query="corporate", tags="pop+electronic", instrumental=true, speed="medium")
-music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+// Add background music
 add_background_music(
-    video="demo_with_voiceover.mp4",
+    video="videos/with_voice.mp4",
     music=music["data"]["path"],
-    output="final_demo.mp4",
-    volume=0.2  // 20% volume, auto-ducks during speech
+    output="videos/with_music.mp4",
+    music_volume=0.15,    // 15% - subtle
+    voice_volume=1.3,     // 130% - boost clarity
+    fade_in_sec=2.0,
+    fade_out_sec=3.0
+)
+
+// Add title overlay
+add_text_overlay(
+    video="videos/with_music.mp4",
+    text="Product Demo",
+    output="videos/final.mp4",
+    position="center",
+    start_sec=0,
+    end_sec=3,
+    font_size=72,
+    font_color="white",
+    bg_color="black@0.7",
+    fade_in_sec=0.8,
+    fade_out_sec=0.8
 )
 ```
 
-**Post-production notes:**
-- Requires ffmpeg installed (`brew install ffmpeg` or https://ffmpeg.org/)
-- `merge_audio_video` positions each audio track at `start_ms` milliseconds
-- `add_background_music` auto-ducks (lowers volume) when speech is detected
-- `list_stock_music` searches Jamendo (Creative Commons licensed) - requires JAMENDO_CLIENT_ID from https://devportal.jamendo.com/
-- Output formats: MP4 recommended for wide compatibility
+### Spotlight effects (Cinematic Engine)
+```
+// Ring: Glowing pulsing border around element
+spotlight(selector="button.cta", style="ring", color="#3b82f6", pulse_ms=1500)
+
+// Spotlight: Dims entire page except target element
+spotlight(selector="#hero", style="spotlight", dim_opacity=0.7)
+
+// Focus: Ring + spotlight combined (maximum impact)
+spotlight(selector=".feature", style="focus", color="#10b981", dim_opacity=0.6)
+
+// Always clear before applying new effect
+clear_spotlight()
+```
+
+### Text overlays (Cinematic Engine)
+```
+// Add title at start of video
+add_text_overlay(
+    video="input.mp4",
+    text="Welcome to Our Demo",
+    output="with_title.mp4",
+    position="center",      // top, center, bottom
+    start_sec=0,
+    end_sec=4,
+    font_size=64,
+    font_color="white",
+    bg_color="black@0.6",   // Semi-transparent
+    fade_in_sec=0.5,
+    fade_out_sec=0.5
+)
+
+// Add caption at specific time
+add_text_overlay(
+    video="with_title.mp4",
+    text="Key Feature Highlight",
+    output="with_caption.mp4",
+    position="bottom",
+    start_sec=10,
+    end_sec=15,
+    font_size=36
+)
+```
+
+### Multi-scene videos with transitions (Cinematic Engine)
+```
+// Record multiple scenes
+start_recording(width=1920, height=1080)
+// ... scene 1 actions ...
+stop_recording()  // saves scene1.webm
+
+start_recording(width=1920, height=1080)
+// ... scene 2 actions ...
+stop_recording()  // saves scene2.webm
+
+// Join with crossfade transition
+concatenate_videos(
+    videos=["videos/scene1.webm", "videos/scene2.webm"],
+    output="videos/combined.mp4",
+    transition="fade",       // fade, wipe, slide, dissolve
+    transition_duration_sec=1.0
+)
+```
+
+**Cinematic Engine best practices:**
+- **Generate voiceover first** - Audio duration determines video pacing
+- **Use presentation mode** - Cleaner visuals without scrollbars
+- **Wait after effects** - Let animations complete (wait > duration_ms)
+- **Layer effects** - Combine spotlight + annotation for emphasis
+- **Keep music subtle** - 10-15% volume, voice should dominate
+- **Add titles in post** - Text overlays more flexible than annotations
+- **Clear before switching** - Always clear_spotlight() before new spotlight
 
 ## Tool Safety Levels
 

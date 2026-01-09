@@ -99,10 +99,26 @@ class RecordingMixin:
         height: int = 1080,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Start video recording of the browser.
+        [Cinematic Engine - PHASE 2] Start video recording of the browser.
 
-        Creates a new browser context with video recording enabled. The current
-        page URL is preserved and restored after context recreation.
+        BEFORE RECORDING:
+        1. generate_voiceover() - Know audio duration to pace your actions
+        2. list_stock_music() + download_stock_music() - Have music ready
+
+        DURING RECORDING (after start_recording):
+        1. set_presentation_mode(True) - Hide scrollbars
+        2. goto() - Navigate to your page
+        3. annotate() - Add floating callouts
+        4. spotlight() - Highlight elements (ring/spotlight/focus)
+        5. camera_zoom() / camera_pan() - Cinematic effects
+        6. smooth_scroll() - Professional scrolling
+        7. wait() - IMPORTANT: Wait > animation duration!
+        8. clear_spotlight() / clear_annotations() before switching
+
+        AFTER RECORDING (stop_recording):
+        1. merge_audio_video() - Add voiceover
+        2. add_background_music() - Layer music (15% volume)
+        3. add_text_overlay() - Add titles
 
         Args:
             filename: Output filename (without extension)

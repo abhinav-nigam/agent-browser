@@ -159,7 +159,7 @@ Options:
 
 ## What Can It Do?
 
-agent-browser provides **70 browser automation tools** organized into categories:
+agent-browser provides **74 browser automation tools** organized into categories:
 
 | Category | Tools | Examples |
 |----------|-------|----------|
@@ -173,7 +173,7 @@ agent-browser provides **70 browser automation tools** organized into categories
 | **Agent Utilities** | 7 | `page_state`, `validate_selector`, `suggest_next_actions`, `browser_status` |
 | **Perception** | 3 | `get_page_markdown`, `get_accessibility_tree`, `find_relative` |
 | **Advanced** | 3 | `highlight`, `mock_network`, `clear_mocks` |
-| **Video Production** | 20 | `start_recording`, `generate_voiceover`, `camera_zoom`, `list_stock_music` |
+| **Video Production** | 24 | `start_recording`, `generate_voiceover`, `spotlight`, `add_text_overlay`, `camera_zoom` |
 
 **For AI agents**: See [AGENT.md](AGENT.md) for a concise reference with selector syntax, common patterns, and tool safety levels.
 
@@ -264,8 +264,10 @@ pip install ai-agent-browser[video]
 ```
 
 **Requirements:**
-- `OPENAI_API_KEY` environment variable (for TTS)
-- `ffmpeg` installed (for post-production)
+- `ffmpeg` installed (for video processing) - https://ffmpeg.org/
+- `ELEVENLABS_API_KEY` for high-quality voiceover (recommended)
+- `OPENAI_API_KEY` for OpenAI TTS (alternative)
+- `JAMENDO_CLIENT_ID` for royalty-free music - https://devportal.jamendo.com/
 
 ### Capabilities
 
@@ -274,44 +276,166 @@ pip install ai-agent-browser[video]
 | **Voice & Timing** | `generate_voiceover`, `get_audio_duration` | Generate TTS audio, get timing for sync |
 | **Recording** | `start_recording`, `stop_recording`, `recording_status` | Capture video with virtual cursor |
 | **Annotations** | `annotate`, `clear_annotations` | Floating text callouts |
+| **Spotlight Effects** | `spotlight`, `clear_spotlight` | Ring highlights, spotlight dimming, focus effects |
 | **Camera** | `camera_zoom`, `camera_pan`, `camera_reset` | Ken Burns-style zoom/pan effects |
-| **Post-Production** | `merge_audio_video`, `add_background_music`, `list_stock_music`, `download_stock_music` | Combine video + audio, royalty-free music |
+| **Post-Production** | `merge_audio_video`, `add_background_music`, `add_text_overlay`, `concatenate_videos` | Audio mixing, titles, transitions |
+| **Stock Music** | `list_stock_music`, `download_stock_music` | Royalty-free music from Jamendo |
 | **Polish** | `smooth_scroll`, `type_human`, `set_presentation_mode` | Human-like interactions |
 
-### Example Workflow
+### Complete Workflow Example
 
 ```python
-# 1. Generate voiceovers first (for timing)
-vo1 = generate_voiceover("Welcome to our product demo", voice="nova")
-vo2 = generate_voiceover("Here's how to get started", voice="nova")
+# ============================================
+# PHASE 1: PREPARATION
+# ============================================
 
-# 2. Record browser session with effects
+# Check environment
+check_environment()  # Verify ffmpeg, API keys
+
+# Generate voiceover FIRST (timing drives everything)
+vo = generate_voiceover(
+    text="Welcome to our product. Watch as we explore the key features.",
+    voice="21m00Tcm4TlvDq8ikWAM",  # ElevenLabs Rachel voice
+    provider="elevenlabs"
+)
+vo_duration = get_audio_duration(vo["data"]["path"])  # ~8 seconds
+
+# Find background music
+tracks = list_stock_music(query="corporate inspiring", instrumental=True, speed="medium")
+music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+
+# ============================================
+# PHASE 2: RECORDING
+# ============================================
+
+# Start recording at 1080p
 start_recording(width=1920, height=1080)
-goto("https://example.com")
-annotate("Our Landing Page", style="dark")
-camera_zoom("#hero", level=1.5)
-smooth_scroll("down", amount=500)
-type_human("#search", "AI automation", wpm=60)
-stop_recording()
+set_presentation_mode(enabled=True)  # Hide scrollbars
 
-# 3. Merge voiceovers at specific timestamps
+# Navigate and add welcome annotation
+goto("https://example.com")
+wait(500)
+annotate("Welcome!", style="dark", position="top-right")
+wait(2000)
+
+# Spotlight the main heading with focus effect
+spotlight(selector="h1", style="focus", color="#3b82f6", dim_opacity=0.7)
+wait(3000)
+clear_spotlight()
+
+# Camera zoom on heading
+camera_zoom(selector="h1", level=1.5, duration_ms=1000)
+wait(1500)
+camera_reset(duration_ms=800)
+wait(500)
+
+# Smooth scroll and highlight content
+clear_annotations()
+smooth_scroll(direction="down", amount=300, duration_ms=1000)
+wait(500)
+
+# Ring highlight on paragraph
+spotlight(selector="p", style="ring", color="#10b981", pulse_ms=1200)
+annotate("Key information here", style="light", position="right")
+wait(2000)
+
+# Cleanup and stop
+clear_spotlight()
+clear_annotations()
+stop_result = stop_recording()
+
+# ============================================
+# PHASE 3: POST-PRODUCTION
+# ============================================
+
+raw_video = stop_result["data"]["path"]
+
+# Merge voiceover (starts at 1 second)
 merge_audio_video(
-    video="recording.webm",
-    audio_tracks=[
-        {"path": vo1["data"]["path"], "start_ms": 0},
-        {"path": vo2["data"]["path"], "start_ms": 8000}
-    ],
-    output="demo_with_vo.mp4"
+    video=raw_video,
+    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000}],
+    output="videos/with_voice.mp4"
 )
 
-# 4. Add royalty-free background music (requires JAMENDO_CLIENT_ID)
-tracks = list_stock_music(query="corporate", tags="pop+electronic", instrumental=True)
-music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+# Add background music (15% volume, auto-fades)
 add_background_music(
-    video="demo_with_vo.mp4",
+    video="videos/with_voice.mp4",
     music=music["data"]["path"],
-    output="final_demo.mp4",
-    volume=0.2  # 20% background volume
+    output="videos/with_music.mp4",
+    music_volume=0.15,      # 15% - subtle background
+    voice_volume=1.3,       # 130% - boost voice clarity
+    fade_in_sec=2.0,
+    fade_out_sec=3.0
+)
+
+# Add title overlay
+add_text_overlay(
+    video="videos/with_music.mp4",
+    text="Product Demo",
+    output="videos/final.mp4",
+    position="center",
+    start_sec=0,
+    end_sec=3,
+    font_size=72,
+    font_color="white",
+    bg_color="black@0.7",
+    fade_in_sec=0.8,
+    fade_out_sec=0.8
+)
+
+# Result: Professional 1080p video with voiceover, music, and title
+```
+
+### Spotlight Effects
+
+Draw attention to elements with cinematic highlighting:
+
+```python
+# Ring: Glowing pulsing border
+spotlight(selector="button.cta", style="ring", color="#3b82f6", pulse_ms=1500)
+
+# Spotlight: Dims everything except the element
+spotlight(selector="#hero-title", style="spotlight", dim_opacity=0.7)
+
+# Focus: Ring + spotlight combined (maximum impact)
+spotlight(selector=".feature-card", style="focus", color="#10b981", dim_opacity=0.6)
+
+# Clear all effects
+clear_spotlight()
+```
+
+### Text Overlays
+
+Add titles, captions, and annotations in post-production:
+
+```python
+# Centered title with fade
+add_text_overlay(
+    video="input.mp4",
+    text="Welcome to Our Demo",
+    output="with_title.mp4",
+    position="center",      # top, center, bottom
+    start_sec=0,
+    end_sec=4,
+    font_size=64,
+    font_color="white",
+    bg_color="black@0.6",   # Semi-transparent background
+    fade_in_sec=0.5,
+    fade_out_sec=0.5
+)
+```
+
+### Video Transitions
+
+Join multiple clips with professional transitions:
+
+```python
+# Concatenate with crossfade
+concatenate_videos(
+    videos=["scene1.mp4", "scene2.mp4", "scene3.mp4"],
+    output="combined.mp4",
+    transition="fade",       # fade, wipe, slide, dissolve
+    transition_duration_sec=1.0
 )
 ```
 
@@ -326,6 +450,17 @@ window.__agentCursor.click(x, y)                 // Click with ripple effect
 ```
 
 The cursor uses cubic-bezier easing for natural motion, not robotic linear movement.
+
+### Best Practices
+
+1. **Generate voiceover first** - Audio duration drives video pacing
+2. **Use presentation mode** - Hides scrollbars for cleaner visuals
+3. **Wait after effects** - Let animations complete before next action
+4. **Layer effects** - Combine spotlight + annotation for maximum impact
+5. **Keep music subtle** - 10-15% volume, let voice dominate
+6. **Add titles in post** - Text overlays are more flexible than annotations
+
+See `examples/cinematic_full_demo.py` for a complete working example.
 
 ## Security Features
 

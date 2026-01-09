@@ -41,10 +41,11 @@ class AnnotationMixin:
         duration_ms: int = 0,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Add a floating text annotation to the video.
+        [Cinematic Engine - PHASE 2] Add a floating text annotation to the video.
 
         Annotations are visual labels that appear on screen during recording
-        to highlight features or explain what's happening.
+        to highlight features or explain what's happening. Use with spotlight()
+        for maximum impact.
 
         Args:
             text: The annotation text to display
@@ -148,34 +149,42 @@ class AnnotationMixin:
         dim_opacity: float = 0.5,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Create cinematic spotlight/highlight effects on elements.
+        [Cinematic Engine - PHASE 2] Create cinematic spotlight/highlight effects.
 
         Creates attention-grabbing visual effects around an element to
-        draw viewer focus during video recording. More advanced than the
-        basic highlight() tool - includes spotlight dimming and pulsing effects.
+        draw viewer focus during video recording. Use during recording phase
+        after start_recording().
+
+        IMPORTANT:
+        - Always call clear_spotlight() before applying a new spotlight
+        - Wait at least 2-3 seconds after spotlight for viewers to notice
+        - Combine with annotate() for maximum impact
 
         Args:
             selector: CSS selector for the element to spotlight
             style: Effect style:
                 - "ring": Glowing pulsing border around element
                 - "spotlight": Dims page except element (cinematic focus)
-                - "focus": Both ring and spotlight combined
-            color: Highlight color (hex or CSS color, default blue)
+                - "focus": Both ring and spotlight combined (MAXIMUM IMPACT)
+            color: Highlight color (hex or CSS color, default blue #3b82f6)
             pulse_ms: Pulse animation duration in ms (default 1500)
-            dim_opacity: Spotlight dimness 0.0-1.0 (default 0.5)
+            dim_opacity: Spotlight dimness 0.0-1.0 (default 0.5, higher = darker)
 
         Returns:
             {"success": True, "data": {"style": "ring", "selector": "..."}}
 
         Example:
-            # Simple ring highlight
-            spotlight(selector="button.submit", style="ring")
+            # Ring highlight with annotation
+            spotlight(selector="button.cta", style="ring", color="#3b82f6")
+            annotate("Click here!", position="above", style="dark")
+            wait(3000)  # Let viewers see it
+            clear_spotlight()
+            clear_annotations()
 
-            # Dramatic spotlight effect
-            spotlight(selector="#hero-title", style="spotlight", dim_opacity=0.7)
-
-            # Full focus with custom color
-            spotlight(selector=".feature-card", style="focus", color="#10b981")
+            # Dramatic focus effect (ring + dim)
+            spotlight(selector="#hero", style="focus", dim_opacity=0.7)
+            wait(3000)
+            clear_spotlight()
         """
 
         try:

@@ -38,10 +38,12 @@ class CameraMixin:
         duration_ms: int = 800,
     ) -> Dict[str, Any]:
         """
-        [Cinematic Engine] Zoom the camera to focus on an element.
+        [Cinematic Engine - PHASE 2] Zoom the camera to focus on an element.
 
         Uses CSS transforms to scale the document and center the target element,
-        creating a "Ken Burns" zoom effect without breaking responsive layouts.
+        creating a "Ken Burns" zoom effect. Use during recording after start_recording().
+
+        IMPORTANT: Always wait() longer than duration_ms after calling!
 
         Args:
             selector: CSS selector for the element to zoom into
@@ -51,7 +53,11 @@ class CameraMixin:
         Returns:
             {"success": True, "data": {"level": 1.5, "target": "selector"}}
 
-        Note: Call camera_reset() to return to normal view.
+        Example:
+            camera_zoom(selector="h1", level=1.5, duration_ms=1000)
+            wait(1500)  # Wait longer than animation!
+            camera_reset(duration_ms=800)
+            wait(1000)
         """
 
         try:

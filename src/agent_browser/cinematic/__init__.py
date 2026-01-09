@@ -50,10 +50,55 @@ __all__ = [
 
 class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, PostProductionMixin, PolishMixin):
     """
-    Combined mixin providing all Cinematic Engine tools.
+    Combined mixin providing all Cinematic Engine tools for video production.
 
-    Inherit from this class to add video production capabilities to your
-    browser automation server.
+    ## WORKFLOW GUIDE (Critical - Read This First!)
+
+    Creating a marketing video follows this 3-phase workflow:
+
+    ### Phase 1: PREPARATION (do first!)
+    1. check_environment() - Verify ffmpeg and API keys
+    2. generate_voiceover() - Create narration FIRST (duration drives pacing)
+    3. get_audio_duration() - Know exact timing for video actions
+    4. list_stock_music() + download_stock_music() - Get background music
+
+    ### Phase 2: RECORDING
+    1. start_recording(width=1920, height=1080) - Begin capture
+    2. set_presentation_mode(enabled=True) - Hide scrollbars
+    3. goto() - Navigate to your page
+    4. annotate() - Add floating text callouts
+    5. spotlight() - Highlight elements (ring, spotlight, focus styles)
+    6. camera_zoom() / camera_pan() - Cinematic camera effects
+    7. smooth_scroll() - Professional scrolling
+    8. wait() - Let animations complete (wait > animation duration!)
+    9. clear_spotlight() / clear_annotations() - Clean up effects
+    10. stop_recording() - End capture, get video path
+
+    ### Phase 3: POST-PRODUCTION
+    1. merge_audio_video() - Add voiceover at specific timestamps
+    2. add_background_music() - Layer music (15% volume, voice at 130%)
+    3. add_text_overlay() - Add titles, captions with fade effects
+    4. concatenate_videos() - Join multiple scenes with transitions
+
+    ## KEY BEST PRACTICES
+    - Generate voiceover FIRST - audio duration determines video pacing
+    - Always wait() after effects - let animations complete
+    - Keep music at 10-15% volume - voice should dominate
+    - Use spotlight(style="focus") for maximum visual impact
+    - Clear effects before switching to new ones
+    - Use presentation_mode for cleaner visuals
+
+    ## Tool Categories
+
+    Voice & Timing: generate_voiceover, get_audio_duration
+    Recording: start_recording, stop_recording, recording_status
+    Annotations: annotate, clear_annotations
+    Spotlight: spotlight, clear_spotlight (ring/spotlight/focus effects)
+    Camera: camera_zoom, camera_pan, camera_reset
+    Post-Production: merge_audio_video, add_background_music, add_text_overlay
+    Transitions: concatenate_videos (fade/wipe/slide/dissolve)
+    Stock Music: list_stock_music, download_stock_music
+    Polish: smooth_scroll, type_human, set_presentation_mode, freeze_time
 
     Required state variables (call _init_cinematic_state() in __init__):
     - _tts_client: Optional[Any] - Lazy-loaded TTS client
