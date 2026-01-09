@@ -75,15 +75,20 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
     10. stop_recording() - End capture, get video path
 
     ### Phase 3: POST-PRODUCTION
-    1. merge_audio_video() - Add voiceover at specific timestamps
-    2. add_background_music() - Layer music (15% volume, voice at 130%)
-    3. add_text_overlay() - Add titles, captions with fade effects
-    4. concatenate_videos() - Join multiple scenes with transitions
+    1. convert_to_mp4() - Convert WebM to MP4 (recommended first step)
+    2. merge_audio_video() - Add voiceover at specific timestamps (fast=True default)
+    3. add_background_music() - Layer music (15% volume, voice at 130%)
+    4. add_text_overlay() - Add titles, captions with fade effects
+    5. concatenate_videos() - Join multiple scenes with transitions
 
     ## KEY BEST PRACTICES
     - Generate voiceover FIRST - audio duration determines video pacing
+    - Convert WebM to MP4 after recording for faster processing
+    - Use merge_audio_video(fast=True) to skip video re-encoding (default)
+    - Control per-track volume: audio_tracks=[{path, start_ms, volume: 1.2}]
     - Always wait() after effects - let animations complete
     - Keep music at 10-15% volume - voice should dominate
+    - Silent videos work - add_background_music() handles them gracefully
     - Use spotlight(style="focus") for maximum visual impact
     - Clear effects before switching to new ones
     - Use presentation_mode for cleaner visuals
@@ -95,7 +100,7 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
     Annotations: annotate, clear_annotations
     Spotlight: spotlight, clear_spotlight (ring/spotlight/focus effects)
     Camera: camera_zoom, camera_pan, camera_reset
-    Post-Production: merge_audio_video, add_background_music, add_text_overlay
+    Post-Production: convert_to_mp4, merge_audio_video, add_background_music, add_text_overlay
     Transitions: concatenate_videos (fade/wipe/slide/dissolve)
     Stock Music: list_stock_music, download_stock_music
     Polish: smooth_scroll, type_human, set_presentation_mode, freeze_time
@@ -184,6 +189,7 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
 
         # Phase 4: Post-Production
         server.tool()(self.check_environment)
+        server.tool()(self.convert_to_mp4)
         server.tool()(self.merge_audio_video)
         server.tool()(self.add_background_music)
         server.tool()(self.get_video_duration)

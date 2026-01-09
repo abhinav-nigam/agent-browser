@@ -162,21 +162,26 @@ class PostProductionMixin:
             "phase3_postproduction": {
                 "description": "Add audio and polish. Order matters!",
                 "steps": [
-                    "1. merge_audio_video(video, audio_tracks=[{path, start_ms}]) - Add voiceover",
-                    "2. add_background_music(video, music, music_volume=0.15, voice_volume=1.3) - Layer music",
-                    "3. add_text_overlay(video, text, position='center', start_sec=0, end_sec=3) - Add titles",
-                    "4. concatenate_videos(videos, transition='fade') - Join multiple scenes",
+                    "1. convert_to_mp4(video, quality='fast') - Convert WebM to MP4 first (recommended)",
+                    "2. merge_audio_video(video, audio_tracks=[{path, start_ms, volume}], fast=True) - Add voiceover",
+                    "3. add_background_music(video, music, music_volume=0.15, voice_volume=1.3) - Layer music",
+                    "4. add_text_overlay(video, text, position='center', start_sec=0, end_sec=3) - Add titles",
+                    "5. concatenate_videos(videos, transition='fade') - Join multiple scenes",
                 ]
             },
         }
 
         best_practices = [
             "ALWAYS generate voiceover FIRST - audio duration determines video pacing",
+            "Use convert_to_mp4() after recording to convert WebM to MP4 (faster processing)",
+            "Use merge_audio_video(fast=True) to skip video re-encoding (default, much faster)",
+            "Control per-track volume: audio_tracks=[{path, start_ms, volume: 1.2}] (0.0-2.0)",
             "Use set_presentation_mode(True) for cleaner visuals without scrollbars",
             "Wait LONGER than animation duration: camera_zoom(duration_ms=1000) needs wait(1500)",
             "Combine spotlight() + annotate() for maximum viewer impact",
             "Use spotlight(style='focus') for dramatic emphasis (ring + dim combined)",
             "Keep music_volume at 0.10-0.15 (10-15%), boost voice_volume to 1.3 (130%)",
+            "Silent videos are OK - add_background_music() handles them gracefully",
             "Always clear_spotlight() before applying a new spotlight effect",
             "Use add_text_overlay() in post-production (more flexible than annotate)",
             "Record at 1920x1080 for professional quality",

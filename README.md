@@ -278,7 +278,7 @@ pip install ai-agent-browser[video]
 | **Annotations** | `annotate`, `clear_annotations` | Floating text callouts |
 | **Spotlight Effects** | `spotlight`, `clear_spotlight` | Ring highlights, spotlight dimming, focus effects |
 | **Camera** | `camera_zoom`, `camera_pan`, `camera_reset` | Ken Burns-style zoom/pan effects |
-| **Post-Production** | `merge_audio_video`, `add_background_music`, `add_text_overlay`, `concatenate_videos` | Audio mixing, titles, transitions |
+| **Post-Production** | `convert_to_mp4`, `merge_audio_video`, `add_background_music`, `add_text_overlay`, `concatenate_videos` | Format conversion, audio mixing, titles, transitions |
 | **Stock Music** | `list_stock_music`, `download_stock_music` | Royalty-free music from Jamendo |
 | **Polish** | `smooth_scroll`, `type_human`, `set_presentation_mode` | Human-like interactions |
 
@@ -350,11 +350,15 @@ stop_result = stop_recording()
 
 raw_video = stop_result["data"]["path"]
 
-# Merge voiceover (starts at 1 second)
+# Convert WebM to MP4 (recommended first step)
+converted = convert_to_mp4(video=raw_video, quality="fast")
+
+# Merge voiceover (starts at 1 second, with volume control)
 merge_audio_video(
-    video=raw_video,
-    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000}],
-    output="videos/with_voice.mp4"
+    video=converted["data"]["path"],
+    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000, "volume": 1.2}],
+    output="videos/with_voice.mp4",
+    fast=True  # Skip video re-encoding (much faster)
 )
 
 # Add background music (15% volume, auto-fades)
@@ -454,11 +458,15 @@ The cursor uses cubic-bezier easing for natural motion, not robotic linear movem
 ### Best Practices
 
 1. **Generate voiceover first** - Audio duration drives video pacing
-2. **Use presentation mode** - Hides scrollbars for cleaner visuals
-3. **Wait after effects** - Let animations complete before next action
-4. **Layer effects** - Combine spotlight + annotation for maximum impact
-5. **Keep music subtle** - 10-15% volume, let voice dominate
-6. **Add titles in post** - Text overlays are more flexible than annotations
+2. **Convert WebM to MP4** - Use `convert_to_mp4()` after recording for faster processing
+3. **Use fast mode** - `merge_audio_video(fast=True)` skips video re-encoding (default)
+4. **Control per-track volume** - `audio_tracks=[{path, start_ms, volume: 1.2}]` (0.0-2.0)
+5. **Use presentation mode** - Hides scrollbars for cleaner visuals
+6. **Wait after effects** - Let animations complete before next action
+7. **Layer effects** - Combine spotlight + annotation for maximum impact
+8. **Keep music subtle** - 10-15% volume, let voice dominate
+9. **Silent videos work** - `add_background_music()` handles videos without audio
+10. **Add titles in post** - Text overlays are more flexible than annotations
 
 See `examples/cinematic_full_demo.py` for a complete working example.
 

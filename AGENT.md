@@ -155,13 +155,14 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `camera_reset(duration_ms?)` - Reset camera to normal 1.0 scale view
 
 **Phase 4: Post-Production** (requires ffmpeg installed)
-- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY, JAMENDO_CLIENT_ID)
-- `merge_audio_video(video, audio_tracks, output)` - Merge video with voiceover audio tracks at specific timestamps
-- `add_background_music(video, music, output, music_volume?, voice_volume?, fade_in_sec?, fade_out_sec?)` - Add background music with volume control and fade effects
+- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY, JAMENDO_CLIENT_ID). Returns workflow guide!
+- `convert_to_mp4(video, output?, quality?)` - Convert WebM to MP4. Quality: "fast" (default, quick), "copy" (fastest, may fail), "high" (slowest, best)
+- `merge_audio_video(video, audio_tracks, output, fast?)` - Merge video with voiceover tracks. Each track: `{path, start_ms, volume}`. Volume 0.0-2.0. `fast=true` skips video re-encoding (default)
+- `add_background_music(video, music, output, music_volume?, voice_volume?, fade_in_sec?, fade_out_sec?)` - Add background music. Works with silent videos!
 - `get_video_duration(path)` - Get video duration in seconds/milliseconds
 - `add_text_overlay(video, text, output, position?, start_sec?, end_sec?, font_size?, font_color?, bg_color?, fade_in_sec?, fade_out_sec?)` - Add title/caption overlays with timing and fade effects
 - `concatenate_videos(videos, output, transition?, transition_duration_sec?)` - Join multiple clips with transitions (fade, wipe, slide, dissolve)
-- `list_stock_music(query?, tags?, instrumental?, speed?, min_duration?, max_duration?)` - Search Jamendo for CC-licensed music (requires JAMENDO_CLIENT_ID)
+- `list_stock_music(query?, tags?, instrumental?, speed?, min_duration?, max_duration?, client_id?)` - Search Jamendo for CC-licensed music (pass client_id or set JAMENDO_CLIENT_ID env)
 - `download_stock_music(url, output?, filename?)` - Download a stock music track to local cache
 
 **Phase 5: Polish**
@@ -404,11 +405,15 @@ result = stop_recording()
 
 raw_video = result["data"]["path"]
 
-// Merge voiceover (start at 1 second)
+// Convert WebM to MP4 first (recommended for faster processing)
+converted = convert_to_mp4(video=raw_video, quality="fast")
+
+// Merge voiceover (start at 1 second, with volume control)
 merge_audio_video(
-    video=raw_video,
-    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000}],
-    output="videos/with_voice.mp4"
+    video=converted["data"]["path"],
+    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000, "volume": 1.2}],
+    output="videos/with_voice.mp4",
+    fast=true  // Skip video re-encoding (default, much faster)
 )
 
 // Add background music
@@ -504,10 +509,14 @@ concatenate_videos(
 
 **Cinematic Engine best practices:**
 - **Generate voiceover first** - Audio duration determines video pacing
+- **Convert WebM to MP4** - Use `convert_to_mp4()` after recording for faster processing
+- **Use fast mode** - `merge_audio_video(fast=true)` skips video re-encoding (default)
+- **Control per-track volume** - `audio_tracks=[{path, start_ms, volume: 1.2}]` (0.0-2.0)
 - **Use presentation mode** - Cleaner visuals without scrollbars
 - **Wait after effects** - Let animations complete (wait > duration_ms)
 - **Layer effects** - Combine spotlight + annotation for emphasis
 - **Keep music subtle** - 10-15% volume, voice should dominate
+- **Silent videos work** - `add_background_music()` handles videos without audio
 - **Add titles in post** - Text overlays more flexible than annotations
 - **Clear before switching** - Always clear_spotlight() before new spotlight
 
