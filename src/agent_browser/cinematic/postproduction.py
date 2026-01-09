@@ -298,7 +298,7 @@ class PostProductionMixin:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=900,  # 15 minute timeout for longer videos
             )
 
             if result.returncode != 0:
@@ -449,7 +449,7 @@ class PostProductionMixin:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=900,  # 15 min for long videos
             )
 
             if result.returncode != 0:
@@ -693,7 +693,7 @@ class PostProductionMixin:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=900,  # 15 min for long videos
             )
 
             if result.returncode != 0:

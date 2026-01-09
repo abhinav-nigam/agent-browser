@@ -172,12 +172,12 @@ CAMERA_SCRIPT = """
     const SMOOTH_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
     window.__agentCamera = {
-        zoom: (selector, level, duration) => {
-            const el = document.querySelector(selector);
-            if (!el) return false;
-            const rect = el.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
+        // Zoom using rect from Playwright's bounding_box()
+        // rect: {x, y, width, height}
+        zoomWithRect: (rect, level, duration) => {
+            if (!rect) return false;
+            const cx = rect.x + rect.width / 2;
+            const cy = rect.y + rect.height / 2;
             const vcx = window.innerWidth / 2;
             const vcy = window.innerHeight / 2;
             const tx = (vcx - cx) / level;
@@ -189,12 +189,11 @@ CAMERA_SCRIPT = """
             document.documentElement.style.transform = `scale(${level}) translate(${tx}px, ${ty}px)`;
             return true;
         },
-        pan: (selector, duration) => {
-            const el = document.querySelector(selector);
-            if (!el) return false;
-            const rect = el.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
+        // Pan using rect from Playwright's bounding_box()
+        panWithRect: (rect, duration) => {
+            if (!rect) return false;
+            const cx = rect.x + rect.width / 2;
+            const cy = rect.y + rect.height / 2;
             const vcx = window.innerWidth / 2;
             const vcy = window.innerHeight / 2;
             const tx = vcx - cx;
@@ -261,20 +260,19 @@ HIGHLIGHT_SCRIPT = """
         ring: null,
 
         // Highlight with glowing ring around element
-        ring: function(selector, color, pulseMs) {
+        // rect: {x, y, width, height} from Playwright's bounding_box()
+        ringWithRect: function(rect, color, pulseMs) {
             this.clearRing();
-            const el = document.querySelector(selector);
-            if (!el) return false;
+            if (!rect) return false;
 
-            const rect = el.getBoundingClientRect();
             const padding = 8;
 
             const ring = document.createElement('div');
             ring.id = '__agent_highlight_ring__';
             ring.style.cssText = `
                 position: fixed;
-                left: ${rect.left - padding}px;
-                top: ${rect.top - padding}px;
+                left: ${rect.x - padding}px;
+                top: ${rect.y - padding}px;
                 width: ${rect.width + padding * 2}px;
                 height: ${rect.height + padding * 2}px;
                 border: 3px solid ${color};
@@ -290,12 +288,11 @@ HIGHLIGHT_SCRIPT = """
         },
 
         // Spotlight effect - dims everything except target
-        spotlight: function(selector, dimOpacity) {
+        // rect: {x, y, width, height} from Playwright's bounding_box()
+        spotlightWithRect: function(rect, dimOpacity) {
             this.clearSpotlight();
-            const el = document.querySelector(selector);
-            if (!el) return false;
+            if (!rect) return false;
 
-            const rect = el.getBoundingClientRect();
             const padding = 12;
 
             // Create overlay with cutout
@@ -311,8 +308,8 @@ HIGHLIGHT_SCRIPT = """
             `;
 
             // Use CSS mask to create spotlight effect
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
+            const cx = rect.x + rect.width / 2;
+            const cy = rect.y + rect.height / 2;
             const rx = rect.width / 2 + padding;
             const ry = rect.height / 2 + padding;
 
@@ -325,10 +322,10 @@ HIGHLIGHT_SCRIPT = """
             return true;
         },
 
-        // Combined: ring + spotlight
-        focus: function(selector, color, dimOpacity, pulseMs) {
-            const spotlightOk = this.spotlight(selector, dimOpacity);
-            const ringOk = this.ring(selector, color, pulseMs);
+        // Combined: ring + spotlight using rect
+        focusWithRect: function(rect, color, dimOpacity, pulseMs) {
+            const spotlightOk = this.spotlightWithRect(rect, dimOpacity);
+            const ringOk = this.ringWithRect(rect, color, pulseMs);
             return spotlightOk && ringOk;
         },
 

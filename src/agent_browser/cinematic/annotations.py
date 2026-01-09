@@ -191,32 +191,43 @@ class AnnotationMixin:
             async with self._lock:
                 page = await self._ensure_page()
 
+                # Use Playwright's locator to find element and get bounding box
+                # This supports all Playwright selectors including :has-text()
+                try:
+                    locator = page.locator(selector).first
+                    box = await locator.bounding_box(timeout=5000)
+                except Exception:
+                    box = None
+
+                if not box:
+                    return {
+                        "success": False,
+                        "message": f"Element not found: {selector}",
+                    }
+
                 # Inject highlight script
                 await page.evaluate(HIGHLIGHT_SCRIPT)
 
-                # Apply the requested effect
+                # Pass bounding box to JavaScript (avoids selector escaping issues)
+                rect_json = f"{{x: {box['x']}, y: {box['y']}, width: {box['width']}, height: {box['height']}}}"
+
+                # Apply the requested effect using rect-based functions
                 if style == "ring":
                     success = await page.evaluate(
-                        f"window.__agentHighlight.ring('{selector}', '{color}', {pulse_ms})"
+                        f"window.__agentHighlight.ringWithRect({rect_json}, '{color}', {pulse_ms})"
                     )
                 elif style == "spotlight":
                     success = await page.evaluate(
-                        f"window.__agentHighlight.spotlight('{selector}', {dim_opacity})"
+                        f"window.__agentHighlight.spotlightWithRect({rect_json}, {dim_opacity})"
                     )
                 elif style == "focus":
                     success = await page.evaluate(
-                        f"window.__agentHighlight.focus('{selector}', '{color}', {dim_opacity}, {pulse_ms})"
+                        f"window.__agentHighlight.focusWithRect({rect_json}, '{color}', {dim_opacity}, {pulse_ms})"
                     )
                 else:
                     return {
                         "success": False,
                         "message": f"Unknown highlight style: {style}. Use 'ring', 'spotlight', or 'focus'.",
-                    }
-
-                if not success:
-                    return {
-                        "success": False,
-                        "message": f"Element not found: {selector}",
                     }
 
                 return {
@@ -226,6 +237,7 @@ class AnnotationMixin:
                         "style": style,
                         "selector": selector,
                         "color": color,
+                        "bounding_box": box,
                     },
                 }
 

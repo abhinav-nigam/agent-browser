@@ -64,15 +64,29 @@ class CameraMixin:
             async with self._lock:
                 page = await self._ensure_page()
 
+                # Use Playwright's locator to find element and get bounding box
+                # This supports all Playwright selectors including :has-text()
+                try:
+                    locator = page.locator(selector).first
+                    box = await locator.bounding_box(timeout=5000)
+                except Exception:
+                    box = None
+
+                if not box:
+                    return {
+                        "success": False,
+                        "message": f"Element not found: {selector}",
+                    }
+
                 # Inject camera script
                 await page.evaluate(CAMERA_SCRIPT)
 
-                # Escape selector for JavaScript
-                escaped_selector = selector.replace("\\", "\\\\").replace("'", "\\'")
+                # Pass bounding box to JavaScript (avoids selector escaping issues)
+                rect_json = f"{{x: {box['x']}, y: {box['y']}, width: {box['width']}, height: {box['height']}}}"
 
-                # Execute zoom
+                # Execute zoom with rect
                 success = await page.evaluate(
-                    f"window.__agentCamera.zoom('{escaped_selector}', {level}, {duration_ms})"
+                    f"window.__agentCamera.zoomWithRect({rect_json}, {level}, {duration_ms})"
                 )
 
                 if success:
@@ -85,12 +99,13 @@ class CameraMixin:
                             "level": level,
                             "target": selector,
                             "duration_ms": duration_ms,
+                            "bounding_box": box,
                         },
                     }
                 else:
                     return {
                         "success": False,
-                        "message": f"Element not found: {selector}",
+                        "message": f"Zoom failed for: {selector}",
                     }
 
         except Exception as exc:  # pylint: disable=broad-except
@@ -121,15 +136,29 @@ class CameraMixin:
             async with self._lock:
                 page = await self._ensure_page()
 
+                # Use Playwright's locator to find element and get bounding box
+                # This supports all Playwright selectors including :has-text()
+                try:
+                    locator = page.locator(selector).first
+                    box = await locator.bounding_box(timeout=5000)
+                except Exception:
+                    box = None
+
+                if not box:
+                    return {
+                        "success": False,
+                        "message": f"Element not found: {selector}",
+                    }
+
                 # Inject camera script
                 await page.evaluate(CAMERA_SCRIPT)
 
-                # Escape selector for JavaScript
-                escaped_selector = selector.replace("\\", "\\\\").replace("'", "\\'")
+                # Pass bounding box to JavaScript (avoids selector escaping issues)
+                rect_json = f"{{x: {box['x']}, y: {box['y']}, width: {box['width']}, height: {box['height']}}}"
 
-                # Execute pan
+                # Execute pan with rect
                 success = await page.evaluate(
-                    f"window.__agentCamera.pan('{escaped_selector}', {duration_ms})"
+                    f"window.__agentCamera.panWithRect({rect_json}, {duration_ms})"
                 )
 
                 if success:
@@ -141,12 +170,13 @@ class CameraMixin:
                         "data": {
                             "target": selector,
                             "duration_ms": duration_ms,
+                            "bounding_box": box,
                         },
                     }
                 else:
                     return {
                         "success": False,
-                        "message": f"Element not found: {selector}",
+                        "message": f"Pan failed for: {selector}",
                     }
 
         except Exception as exc:  # pylint: disable=broad-except
