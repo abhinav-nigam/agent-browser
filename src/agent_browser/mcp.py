@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import ipaddress
 import logging
 import re
 import socket
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse

@@ -8,7 +8,7 @@ preserving responsive layouts (unlike viewport resizing).
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 from .scripts import CAMERA_SCRIPT
 

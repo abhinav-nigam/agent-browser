@@ -6,12 +6,11 @@ Provides video/audio merging and processing using ffmpeg.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 class PostProductionMixin:
