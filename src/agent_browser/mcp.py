@@ -1391,36 +1391,59 @@ Use this to decide how aggressive to be with self-correction loops.
         }
 
         # Check TCP connectivity using async to avoid blocking the event loop
-        try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
-                timeout=2.0
-            )
-            writer.close()
-            await writer.wait_closed()
-            result["reachable"] = True
-        except asyncio.TimeoutError:
-            return {
-                "success": True,
-                "message": f"Port {port} connection timed out on {host}",
-                "data": result,
-            }
-        except ConnectionRefusedError:
-            return {
-                "success": True,
-                "message": f"Port {port} is not open on {host} (connection refused)",
-                "data": result,
-            }
-        except OSError as exc:
-            return {
-                "success": False,
-                "message": f"Could not check port {port}: {exc}",
-                "data": result,
-            }
+        # For "localhost", try both IPv4 and IPv6 since resolution varies by OS
+        hosts_to_try = [host]
+        if host.lower() == "localhost":
+            hosts_to_try = ["127.0.0.1", "::1"]  # Try IPv4 first, then IPv6
+
+        connected = False
+        last_error = None
+        actual_host = host
+
+        for try_host in hosts_to_try:
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(try_host, port),
+                    timeout=2.0
+                )
+                writer.close()
+                await writer.wait_closed()
+                connected = True
+                actual_host = try_host
+                break
+            except asyncio.TimeoutError:
+                last_error = "timeout"
+            except ConnectionRefusedError:
+                last_error = "refused"
+            except OSError as exc:
+                last_error = str(exc)
+
+        if not connected:
+            if last_error == "timeout":
+                return {
+                    "success": True,
+                    "message": f"Port {port} connection timed out on {host}",
+                    "data": result,
+                }
+            elif last_error == "refused":
+                return {
+                    "success": True,
+                    "message": f"Port {port} is not open on {host} (connection refused)",
+                    "data": result,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Could not check port {port}: {last_error}",
+                    "data": result,
+                }
+
+        result["reachable"] = True
+        result["host"] = actual_host  # Update with the host that worked
 
         # Try HTTP request to get more info
         try:
-            url = f"http://{host}:{port}/"
+            url = f"http://{actual_host}:{port}/"
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
                 async with session.get(url) as response:
                     result["http_status"] = response.status
