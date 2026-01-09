@@ -334,8 +334,21 @@ class PostProductionMixin:
             cmd.extend(["-filter_complex", filter_complex])
             cmd.extend(["-map", "0:v", "-map", audio_output])
 
-            # Output settings
+            # Determine video encoding strategy
+            # -c:v copy only works if the video codec is compatible with the output container
+            # VP8/VP9 from WebM cannot be copied to MP4 - must transcode
+            use_copy = False
             if fast:
+                video_codec = self._get_video_codec(str(video_path))
+                output_ext = Path(output).suffix.lower()
+                # H.264/H.265 work in MP4; VP8/VP9 only work in WebM
+                mp4_compatible = video_codec in ("h264", "hevc", "h265", "avc")
+                webm_output = output_ext in (".webm",)
+                if mp4_compatible or webm_output:
+                    use_copy = True
+
+            # Output settings
+            if use_copy:
                 # Fast mode: copy video stream (no re-encoding), only encode audio
                 cmd.extend([
                     "-c:v", "copy",
@@ -345,9 +358,11 @@ class PostProductionMixin:
                 ])
             else:
                 # Quality mode: re-encode video with libx264 for compatibility
+                # Use ultrafast preset when fast=True for speed, medium when fast=False for quality
+                preset = "ultrafast" if fast else "medium"
                 cmd.extend([
                     "-c:v", "libx264",
-                    "-preset", "medium",
+                    "-preset", preset,
                     "-crf", "23",
                     "-c:a", "aac",
                     "-b:a", "192k",
