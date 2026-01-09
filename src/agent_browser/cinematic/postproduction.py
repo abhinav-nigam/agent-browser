@@ -7,6 +7,7 @@ Includes stock music integration via Pixabay Audio API.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import subprocess
@@ -27,6 +28,46 @@ class PostProductionMixin:
     These tools require ffmpeg to be installed on the system.
     Use check_environment() to verify prerequisites.
     """
+
+    async def _run_ffmpeg_async(
+        self,
+        cmd: List[str],
+        timeout_sec: int = 900,
+    ) -> tuple[int, str, str]:
+        """
+        Run ffmpeg command asynchronously without blocking the event loop.
+
+        Args:
+            cmd: Command and arguments list
+            timeout_sec: Timeout in seconds (default 15 minutes)
+
+        Returns:
+            Tuple of (return_code, stdout, stderr)
+
+        Raises:
+            asyncio.TimeoutError: If command exceeds timeout
+        """
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout_sec,
+            )
+            return (
+                process.returncode or 0,
+                stdout.decode("utf-8", errors="replace"),
+                stderr.decode("utf-8", errors="replace"),
+            )
+        except asyncio.TimeoutError:
+            # Kill the process on timeout
+            process.kill()
+            await process.wait()
+            raise
 
     def _has_audio_stream(self, video_path: str) -> bool:
         """Check if a video file has an audio stream."""
@@ -369,17 +410,18 @@ class PostProductionMixin:
                     str(output),
                 ])
 
-            # Run ffmpeg
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=900,  # 15 minute timeout for longer videos
-            )
+            # Run ffmpeg asynchronously (doesn't block event loop)
+            try:
+                returncode, stdout, stderr = await self._run_ffmpeg_async(
+                    cmd,
+                    timeout_sec=900,  # 15 minute timeout for longer videos
+                )
+            except asyncio.TimeoutError:
+                return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
 
-            if result.returncode != 0:
+            if returncode != 0:
                 # Extract useful error info
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+                error_msg = stderr[-500:] if stderr else "Unknown error"
                 return {
                     "success": False,
                     "message": f"ffmpeg failed: {error_msg}",
@@ -402,9 +444,6 @@ class PostProductionMixin:
                     "audio_tracks_merged": len(audio_tracks),
                 },
             }
-
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Merge failed: {exc}"}
 
@@ -542,15 +581,17 @@ class PostProductionMixin:
                 str(output),
             ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=900,  # 15 min for long videos
-            )
+            # Run ffmpeg asynchronously (doesn't block event loop)
+            try:
+                returncode, stdout, stderr = await self._run_ffmpeg_async(
+                    cmd,
+                    timeout_sec=900,  # 15 min for long videos
+                )
+            except asyncio.TimeoutError:
+                return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
 
-            if result.returncode != 0:
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+            if returncode != 0:
+                error_msg = stderr[-500:] if stderr else "Unknown error"
                 return {
                     "success": False,
                     "message": f"ffmpeg failed: {error_msg}",
@@ -571,8 +612,6 @@ class PostProductionMixin:
                 },
             }
 
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Add music failed: {exc}"}
 
@@ -608,20 +647,22 @@ class PostProductionMixin:
                 str(video_path),
             ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            # Run ffprobe asynchronously
+            try:
+                returncode, stdout, stderr = await self._run_ffmpeg_async(
+                    cmd,
+                    timeout_sec=30,
+                )
+            except asyncio.TimeoutError:
+                return {"success": False, "message": "ffprobe timed out"}
 
-            if result.returncode != 0:
+            if returncode != 0:
                 return {
                     "success": False,
-                    "message": f"ffprobe failed: {result.stderr}",
+                    "message": f"ffprobe failed: {stderr}",
                 }
 
-            duration_sec = float(result.stdout.strip())
+            duration_sec = float(stdout.strip())
             duration_ms = int(duration_sec * 1000)
 
             return {
@@ -635,8 +676,6 @@ class PostProductionMixin:
 
         except ValueError:
             return {"success": False, "message": "Could not parse duration from ffprobe"}
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffprobe timed out"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Failed to get duration: {exc}"}
 
@@ -727,15 +766,17 @@ class PostProductionMixin:
                     str(output_path),
                 ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=900,  # 15 min for long videos
-            )
+            # Run ffmpeg asynchronously (doesn't block event loop)
+            try:
+                returncode, stdout, stderr = await self._run_ffmpeg_async(
+                    cmd,
+                    timeout_sec=900,  # 15 min for long videos
+                )
+            except asyncio.TimeoutError:
+                return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
 
-            if result.returncode != 0:
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+            if returncode != 0:
+                error_msg = stderr[-500:] if stderr else "Unknown error"
                 # If copy mode failed, suggest using fast mode
                 if quality == "copy" and "codec" in error_msg.lower():
                     return {
@@ -768,8 +809,6 @@ class PostProductionMixin:
                 },
             }
 
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Conversion failed: {exc}"}
 
@@ -919,15 +958,17 @@ class PostProductionMixin:
                 str(output),
             ]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=900,  # 15 min for long videos
-            )
+            # Run ffmpeg asynchronously (doesn't block event loop)
+            try:
+                returncode, stdout, stderr = await self._run_ffmpeg_async(
+                    cmd,
+                    timeout_sec=900,  # 15 min for long videos
+                )
+            except asyncio.TimeoutError:
+                return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
 
-            if result.returncode != 0:
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+            if returncode != 0:
+                error_msg = stderr[-500:] if stderr else "Unknown error"
                 return {
                     "success": False,
                     "message": f"ffmpeg failed: {error_msg}",
@@ -949,8 +990,6 @@ class PostProductionMixin:
                 },
             }
 
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Add text overlay failed: {exc}"}
 
@@ -1009,7 +1048,10 @@ class PostProductionMixin:
             # For single video, just copy it
             if len(videos) == 1:
                 cmd = ["ffmpeg", "-y", "-i", videos[0], "-c", "copy", str(output)]
-                subprocess.run(cmd, capture_output=True, timeout=300)
+                try:
+                    await self._run_ffmpeg_async(cmd, timeout_sec=300)
+                except asyncio.TimeoutError:
+                    return {"success": False, "message": "ffmpeg timed out"}
                 return {
                     "success": True,
                     "message": "Copied single video",
@@ -1043,11 +1085,15 @@ class PostProductionMixin:
                     str(output),
                 ]
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                try:
+                    returncode, stdout, stderr = await self._run_ffmpeg_async(cmd, timeout_sec=300)
+                except asyncio.TimeoutError:
+                    concat_file.unlink(missing_ok=True)
+                    return {"success": False, "message": "ffmpeg timed out"}
                 concat_file.unlink(missing_ok=True)  # Clean up
 
-                if result.returncode != 0:
-                    return {"success": False, "message": f"Concat failed: {result.stderr[-500:]}"}
+                if returncode != 0:
+                    return {"success": False, "message": f"Concat failed: {stderr[-500:]}"}
             else:
                 # Use xfade filter for transitions
                 # Build complex filter graph
@@ -1109,10 +1155,13 @@ class PostProductionMixin:
                     str(output),
                 ]
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                try:
+                    returncode, stdout, stderr = await self._run_ffmpeg_async(cmd, timeout_sec=600)
+                except asyncio.TimeoutError:
+                    return {"success": False, "message": "ffmpeg timed out (>10 minutes)"}
 
-                if result.returncode != 0:
-                    error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+                if returncode != 0:
+                    error_msg = stderr[-500:] if stderr else "Unknown error"
                     return {"success": False, "message": f"Transition concat failed: {error_msg}"}
 
             output_path = Path(output)
@@ -1134,8 +1183,6 @@ class PostProductionMixin:
                 },
             }
 
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>10 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Concatenate failed: {exc}"}
 
