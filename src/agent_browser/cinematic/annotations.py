@@ -11,7 +11,7 @@ import asyncio
 import time
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from .scripts import ANNOTATION_SCRIPT
+from .scripts import ANNOTATION_SCRIPT, HIGHLIGHT_SCRIPT
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -138,3 +138,109 @@ class AnnotationMixin:
 
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Failed to clear annotations: {exc}"}
+
+    async def spotlight(
+        self,
+        selector: str,
+        style: str = "ring",
+        color: str = "#3b82f6",
+        pulse_ms: int = 1500,
+        dim_opacity: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        [Cinematic Engine] Create cinematic spotlight/highlight effects on elements.
+
+        Creates attention-grabbing visual effects around an element to
+        draw viewer focus during video recording. More advanced than the
+        basic highlight() tool - includes spotlight dimming and pulsing effects.
+
+        Args:
+            selector: CSS selector for the element to spotlight
+            style: Effect style:
+                - "ring": Glowing pulsing border around element
+                - "spotlight": Dims page except element (cinematic focus)
+                - "focus": Both ring and spotlight combined
+            color: Highlight color (hex or CSS color, default blue)
+            pulse_ms: Pulse animation duration in ms (default 1500)
+            dim_opacity: Spotlight dimness 0.0-1.0 (default 0.5)
+
+        Returns:
+            {"success": True, "data": {"style": "ring", "selector": "..."}}
+
+        Example:
+            # Simple ring highlight
+            spotlight(selector="button.submit", style="ring")
+
+            # Dramatic spotlight effect
+            spotlight(selector="#hero-title", style="spotlight", dim_opacity=0.7)
+
+            # Full focus with custom color
+            spotlight(selector=".feature-card", style="focus", color="#10b981")
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+
+                # Inject highlight script
+                await page.evaluate(HIGHLIGHT_SCRIPT)
+
+                # Apply the requested effect
+                if style == "ring":
+                    success = await page.evaluate(
+                        f"window.__agentHighlight.ring('{selector}', '{color}', {pulse_ms})"
+                    )
+                elif style == "spotlight":
+                    success = await page.evaluate(
+                        f"window.__agentHighlight.spotlight('{selector}', {dim_opacity})"
+                    )
+                elif style == "focus":
+                    success = await page.evaluate(
+                        f"window.__agentHighlight.focus('{selector}', '{color}', {dim_opacity}, {pulse_ms})"
+                    )
+                else:
+                    return {
+                        "success": False,
+                        "message": f"Unknown highlight style: {style}. Use 'ring', 'spotlight', or 'focus'.",
+                    }
+
+                if not success:
+                    return {
+                        "success": False,
+                        "message": f"Element not found: {selector}",
+                    }
+
+                return {
+                    "success": True,
+                    "message": f"Applied {style} highlight to {selector}",
+                    "data": {
+                        "style": style,
+                        "selector": selector,
+                        "color": color,
+                    },
+                }
+
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": f"Failed to highlight: {exc}"}
+
+    async def clear_spotlight(self) -> Dict[str, Any]:
+        """
+        [Cinematic Engine] Remove all spotlight/highlight effects from the page.
+
+        Returns:
+            {"success": True, "message": "Cleared all spotlight effects"}
+        """
+
+        try:
+            async with self._lock:
+                page = await self._ensure_page()
+                await page.evaluate(HIGHLIGHT_SCRIPT)
+                await page.evaluate("window.__agentHighlight.clear()")
+
+                return {
+                    "success": True,
+                    "message": "Cleared all spotlight effects",
+                }
+
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": f"Failed to clear spotlight: {exc}"}

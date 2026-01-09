@@ -228,3 +228,126 @@ PRESENTATION_MODE_SCRIPT = """
     document.head.appendChild(style);
 })();
 """
+
+# Highlight/spotlight script
+# Creates attention-grabbing visual effects around elements
+HIGHLIGHT_SCRIPT = """
+(() => {
+    if (window.__agentHighlight) return;
+
+    // Add highlight animation styles
+    if (!document.getElementById('__agent_highlight_style__')) {
+        const style = document.createElement('style');
+        style.id = '__agent_highlight_style__';
+        style.textContent = `
+            @keyframes __agent_highlight_pulse__ {
+                0%, 100% { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.3); }
+                50% { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.7), 0 0 30px rgba(59, 130, 246, 0.5); }
+            }
+            @keyframes __agent_highlight_glow__ {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+            }
+            @keyframes __agent_spotlight_fade_in__ {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    window.__agentHighlight = {
+        overlay: null,
+        ring: null,
+
+        // Highlight with glowing ring around element
+        ring: function(selector, color, pulseMs) {
+            this.clearRing();
+            const el = document.querySelector(selector);
+            if (!el) return false;
+
+            const rect = el.getBoundingClientRect();
+            const padding = 8;
+
+            const ring = document.createElement('div');
+            ring.id = '__agent_highlight_ring__';
+            ring.style.cssText = `
+                position: fixed;
+                left: ${rect.left - padding}px;
+                top: ${rect.top - padding}px;
+                width: ${rect.width + padding * 2}px;
+                height: ${rect.height + padding * 2}px;
+                border: 3px solid ${color};
+                border-radius: 8px;
+                pointer-events: none;
+                z-index: 2147483640;
+                animation: __agent_highlight_pulse__ ${pulseMs}ms ease-in-out infinite;
+                box-shadow: 0 0 0 3px ${color}40, 0 0 20px ${color}30;
+            `;
+            document.body.appendChild(ring);
+            this._ring = ring;
+            return true;
+        },
+
+        // Spotlight effect - dims everything except target
+        spotlight: function(selector, dimOpacity) {
+            this.clearSpotlight();
+            const el = document.querySelector(selector);
+            if (!el) return false;
+
+            const rect = el.getBoundingClientRect();
+            const padding = 12;
+
+            // Create overlay with cutout
+            const overlay = document.createElement('div');
+            overlay.id = '__agent_spotlight_overlay__';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0; left: 0;
+                width: 100vw; height: 100vh;
+                pointer-events: none;
+                z-index: 2147483639;
+                animation: __agent_spotlight_fade_in__ 0.3s ease-out;
+            `;
+
+            // Use CSS mask to create spotlight effect
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const rx = rect.width / 2 + padding;
+            const ry = rect.height / 2 + padding;
+
+            overlay.style.background = `rgba(0, 0, 0, ${dimOpacity})`;
+            overlay.style.maskImage = `radial-gradient(ellipse ${rx}px ${ry}px at ${cx}px ${cy}px, transparent 100%, black 100%)`;
+            overlay.style.webkitMaskImage = overlay.style.maskImage;
+
+            document.body.appendChild(overlay);
+            this._overlay = overlay;
+            return true;
+        },
+
+        // Combined: ring + spotlight
+        focus: function(selector, color, dimOpacity, pulseMs) {
+            const spotlightOk = this.spotlight(selector, dimOpacity);
+            const ringOk = this.ring(selector, color, pulseMs);
+            return spotlightOk && ringOk;
+        },
+
+        clearRing: function() {
+            const existing = document.getElementById('__agent_highlight_ring__');
+            if (existing) existing.remove();
+            this._ring = null;
+        },
+
+        clearSpotlight: function() {
+            const existing = document.getElementById('__agent_spotlight_overlay__');
+            if (existing) existing.remove();
+            this._overlay = null;
+        },
+
+        clear: function() {
+            this.clearRing();
+            this.clearSpotlight();
+        }
+    };
+})();
+"""

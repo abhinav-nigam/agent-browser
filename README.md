@@ -159,7 +159,7 @@ Options:
 
 ## What Can It Do?
 
-agent-browser provides **68 browser automation tools** organized into categories:
+agent-browser provides **70 browser automation tools** organized into categories:
 
 | Category | Tools | Examples |
 |----------|-------|----------|
@@ -173,7 +173,7 @@ agent-browser provides **68 browser automation tools** organized into categories
 | **Agent Utilities** | 7 | `page_state`, `validate_selector`, `suggest_next_actions`, `browser_status` |
 | **Perception** | 3 | `get_page_markdown`, `get_accessibility_tree`, `find_relative` |
 | **Advanced** | 3 | `highlight`, `mock_network`, `clear_mocks` |
-| **Video Production** | 18 | `start_recording`, `generate_voiceover`, `camera_zoom`, `merge_audio_video` |
+| **Video Production** | 20 | `start_recording`, `generate_voiceover`, `camera_zoom`, `list_stock_music` |
 
 **For AI agents**: See [AGENT.md](AGENT.md) for a concise reference with selector syntax, common patterns, and tool safety levels.
 
@@ -275,7 +275,7 @@ pip install ai-agent-browser[video]
 | **Recording** | `start_recording`, `stop_recording`, `recording_status` | Capture video with virtual cursor |
 | **Annotations** | `annotate`, `clear_annotations` | Floating text callouts |
 | **Camera** | `camera_zoom`, `camera_pan`, `camera_reset` | Ken Burns-style zoom/pan effects |
-| **Post-Production** | `merge_audio_video`, `add_background_music` | Combine video + audio tracks |
+| **Post-Production** | `merge_audio_video`, `add_background_music`, `list_stock_music`, `download_stock_music` | Combine video + audio, royalty-free music |
 | **Polish** | `smooth_scroll`, `type_human`, `set_presentation_mode` | Human-like interactions |
 
 ### Example Workflow
@@ -301,7 +301,17 @@ merge_audio_video(
         {"path": vo1["data"]["path"], "start_ms": 0},
         {"path": vo2["data"]["path"], "start_ms": 8000}
     ],
-    output="final_demo.mp4"
+    output="demo_with_vo.mp4"
+)
+
+# 4. Add royalty-free background music (requires JAMENDO_CLIENT_ID)
+tracks = list_stock_music(query="corporate", tags="pop+electronic", instrumental=True)
+music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+add_background_music(
+    video="demo_with_vo.mp4",
+    music=music["data"]["path"],
+    output="final_demo.mp4",
+    volume=0.2  # 20% background volume
 )
 ```
 

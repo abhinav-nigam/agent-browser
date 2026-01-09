@@ -152,10 +152,12 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `camera_reset(duration_ms?)` - Reset camera to normal 1.0 scale view
 
 **Phase 4: Post-Production** (requires ffmpeg installed)
-- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY)
+- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY, JAMENDO_CLIENT_ID)
 - `merge_audio_video(video, audio_tracks, output)` - Merge video with voiceover audio tracks at specific timestamps
 - `add_background_music(video, music, output, volume?, duck_to?)` - Add background music with auto-ducking when speech detected
 - `get_video_duration(path)` - Get video duration in seconds/milliseconds
+- `list_stock_music(query?, tags?, instrumental?, speed?, min_duration?, max_duration?)` - Search Jamendo for CC-licensed music (requires JAMENDO_CLIENT_ID)
+- `download_stock_music(url, output?, filename?)` - Download a stock music track to local cache
 
 **Phase 5: Polish**
 - `smooth_scroll(direction, amount?, duration_ms?)` - Cinematic smooth scrolling with easing (vs instant jump)
@@ -355,10 +357,12 @@ merge_audio_video(
     output="demo_with_voiceover.mp4"
 )
 
-// 5. Add background music (optional)
+// 5. Find and add royalty-free background music (optional)
+tracks = list_stock_music(query="corporate", tags="pop+electronic", instrumental=true, speed="medium")
+music = download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
 add_background_music(
     video="demo_with_voiceover.mp4",
-    music="background_track.mp3",
+    music=music["data"]["path"],
     output="final_demo.mp4",
     volume=0.2  // 20% volume, auto-ducks during speech
 )
@@ -368,6 +372,7 @@ add_background_music(
 - Requires ffmpeg installed (`brew install ffmpeg` or https://ffmpeg.org/)
 - `merge_audio_video` positions each audio track at `start_ms` milliseconds
 - `add_background_music` auto-ducks (lowers volume) when speech is detected
+- `list_stock_music` searches Jamendo (Creative Commons licensed) - requires JAMENDO_CLIENT_ID from https://devportal.jamendo.com/
 - Output formats: MP4 recommended for wide compatibility
 
 ## Tool Safety Levels

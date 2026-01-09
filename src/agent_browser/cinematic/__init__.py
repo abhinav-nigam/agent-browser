@@ -5,7 +5,7 @@ This package provides tools for creating marketing-grade video content:
 - Phase 1: Voice & Timing (TTS, audio duration)
 - Phase 2: Recording & Virtual Actor (video capture, cursor, annotations)
 - Phase 3: Camera Control (zoom, pan)
-- Phase 4: Post-Production (audio/video merging, background music)
+- Phase 4: Post-Production (audio/video merging, background music, stock music library)
 - Phase 5: Polish (smooth scrolling, human-like typing, presentation mode)
 
 Usage:
@@ -129,6 +129,8 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
         server.tool()(self.recording_status)
         server.tool()(self.annotate)
         server.tool()(self.clear_annotations)
+        server.tool()(self.spotlight)
+        server.tool()(self.clear_spotlight)
 
         # Phase 3: Camera Control
         server.tool()(self.camera_zoom)
@@ -140,6 +142,10 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
         server.tool()(self.merge_audio_video)
         server.tool()(self.add_background_music)
         server.tool()(self.get_video_duration)
+        server.tool()(self.add_text_overlay)
+        server.tool()(self.concatenate_videos)
+        server.tool()(self.list_stock_music)
+        server.tool()(self.download_stock_music)
 
         # Phase 5: Polish
         server.tool()(self.smooth_scroll)

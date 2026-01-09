@@ -1164,6 +1164,162 @@ async def test_get_video_duration_missing_file():
     assert "not found" in result["message"].lower()
 
 
+@pytest.mark.asyncio
+async def test_stock_music_tools_exist():
+    """Test that stock music tools are registered."""
+    server = BrowserServer("test-stock-music")
+    tool_names = [t.name for t in server.server._tool_manager.list_tools()]
+
+    assert "list_stock_music" in tool_names
+    assert "download_stock_music" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_list_stock_music_no_api_key(monkeypatch):
+    """Test list_stock_music handles missing API key."""
+    # Ensure JAMENDO_CLIENT_ID is not set
+    monkeypatch.delenv("JAMENDO_CLIENT_ID", raising=False)
+
+    server = BrowserServer("test-stock-music")
+    result = await server.list_stock_music(query="background")
+
+    assert result["success"] is False
+    assert "JAMENDO_CLIENT_ID" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_stock_music_with_mock(monkeypatch):
+    """Test list_stock_music correctly parses Jamendo API response."""
+    import aiohttp
+    from unittest.mock import AsyncMock, MagicMock
+
+    # Set a fake client ID
+    monkeypatch.setenv("JAMENDO_CLIENT_ID", "test_client_id")
+
+    # Mock response data matching Jamendo API format
+    mock_response_data = {
+        "headers": {
+            "status": "success",
+            "code": 0,
+            "results_count": 2,
+            "results_fullcount": 150,
+        },
+        "results": [
+            {
+                "id": "1532771",
+                "name": "Corporate Vibes",
+                "duration": 120,
+                "artist_name": "Test Artist",
+                "album_name": "Test Album",
+                "audio": "https://example.com/stream.mp3",
+                "audiodownload": "https://example.com/download.mp3",
+                "album_image": "https://example.com/cover.jpg",
+                "shareurl": "https://jamendo.com/track/123",
+                "license_ccurl": "http://creativecommons.org/licenses/by-nc-sa/3.0/",
+            },
+            {
+                "id": "1532772",
+                "name": "Epic Trailer",
+                "duration": 180,
+                "artist_name": "Another Artist",
+                "album_name": "",
+                "audio": "https://example.com/stream2.mp3",
+                "audiodownload": "https://example.com/download2.mp3",
+            },
+        ],
+    }
+
+    # Create mock response
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value=mock_response_data)
+
+    # Create mock session
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response)))
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    # Patch aiohttp.ClientSession
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda: mock_session)
+
+    server = BrowserServer("test-stock-music")
+    result = await server.list_stock_music(query="corporate", tags="pop")
+
+    assert result["success"] is True
+    assert result["data"]["total"] == 150
+    assert len(result["data"]["tracks"]) == 2
+
+    # Verify first track parsing
+    track1 = result["data"]["tracks"][0]
+    assert track1["id"] == "1532771"
+    assert track1["name"] == "Corporate Vibes"
+    assert track1["duration_sec"] == 120
+    assert track1["artist"] == "Test Artist"
+    assert track1["download_url"] == "https://example.com/download.mp3"
+    assert track1["license"] == "CC BY-NC-SA"
+
+    # Verify second track (with missing fields)
+    track2 = result["data"]["tracks"][1]
+    assert track2["id"] == "1532772"
+    assert track2["album"] == ""  # Missing album handled
+
+
+@pytest.mark.asyncio
+async def test_list_stock_music_empty_results(monkeypatch):
+    """Test list_stock_music handles empty results gracefully."""
+    import aiohttp
+    from unittest.mock import AsyncMock, MagicMock
+
+    monkeypatch.setenv("JAMENDO_CLIENT_ID", "test_client_id")
+
+    mock_response_data = {
+        "headers": {"status": "success", "results_count": 0, "results_fullcount": 0},
+        "results": [],
+    }
+
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value=mock_response_data)
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response)))
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda: mock_session)
+
+    server = BrowserServer("test-stock-music")
+    result = await server.list_stock_music(query="nonexistent_query_xyz")
+
+    assert result["success"] is True
+    assert result["data"]["total"] == 0
+    assert len(result["data"]["tracks"]) == 0
+    assert "Found 0 tracks" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_download_stock_music_invalid_url():
+    """Test download_stock_music handles invalid URL."""
+    server = BrowserServer("test-stock-music")
+    result = await server.download_stock_music(url="not-a-valid-url")
+
+    assert result["success"] is False
+    assert "Invalid URL" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_download_stock_music_nonexistent_url():
+    """Test download_stock_music handles non-existent URL."""
+    server = BrowserServer("test-stock-music")
+    result = await server.download_stock_music(
+        url="https://nonexistent.invalid/track.mp3"
+    )
+
+    assert result["success"] is False
+    # Should fail due to connection error or 404
+
+
 # =============================================================================
 # Cinematic Engine - Phase 5: Polish Tests
 # =============================================================================
