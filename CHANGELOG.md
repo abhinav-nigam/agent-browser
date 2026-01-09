@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-01-09
+
+### Added
+- `convert_to_mp4` tool for converting video formats with configurable quality presets
+
+### Fixed
+- Auto-detect codec for smart fast mode in `merge_audio_video` (fixes compatibility issues)
+- Increased ffmpeg timeout for longer video processing
+- Fixed Playwright selector support in cinematic tools
+
+### Changed
+- Test suite performance improved by 56% (216s → 94s) via shared browser fixtures and local test pages
+
 ## [0.1.6] - 2025-12-29
 
 ### Fixed
