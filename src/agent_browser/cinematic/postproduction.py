@@ -28,6 +28,39 @@ class PostProductionMixin:
     Use check_environment() to verify prerequisites.
     """
 
+    def _has_audio_stream(self, video_path: str) -> bool:
+        """Check if a video file has an audio stream."""
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                str(video_path)
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            # If output contains "audio", there's an audio stream
+            return "audio" in result.stdout.lower()
+        except Exception:  # pylint: disable=broad-except
+            return False
+
+    def _get_video_codec(self, video_path: str) -> Optional[str]:
+        """Get the video codec of a file (e.g., 'h264', 'vp9')."""
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "csv=p=0",
+                str(video_path)
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().lower()
+        except Exception:  # pylint: disable=broad-except
+            pass
+        return None
+
     async def check_environment(self) -> Dict[str, Any]:
         """
         [Cinematic Engine] CALL THIS FIRST! Check environment and get workflow guide.
@@ -171,6 +204,7 @@ class PostProductionMixin:
         video: str,
         audio_tracks: List[Dict[str, Any]],
         output: str,
+        fast: bool = True,
     ) -> Dict[str, Any]:
         """
         [Cinematic Engine - PHASE 3] Merge video with multiple audio tracks.
@@ -178,14 +212,21 @@ class PostProductionMixin:
         Combines a video file with one or more audio tracks (voiceovers),
         positioning each track at a specific timestamp. Call AFTER stop_recording().
 
+        Works with silent videos (no existing audio track) - perfect for WebM recordings.
+
         Args:
             video: Path to the input video file (WebM from recording)
             audio_tracks: List of audio tracks to merge:
                 [
-                    {"path": "/path/to/audio1.mp3", "start_ms": 0},
-                    {"path": "/path/to/audio2.mp3", "start_ms": 5000},
+                    {"path": "/path/to/audio1.mp3", "start_ms": 0, "volume": 1.0},
+                    {"path": "/path/to/audio2.mp3", "start_ms": 5000, "volume": 0.8},
                 ]
+                - path: Path to audio file (required)
+                - start_ms: When to start playing this track in milliseconds (default: 0)
+                - volume: Volume level 0.0-2.0 (default: 1.0 = 100%, 0.5 = 50%, 1.5 = 150%)
             output: Path for the output video file (MP4 recommended)
+            fast: If True (default), copy video stream without re-encoding (MUCH faster).
+                  If False, re-encode video with libx264 (slower but ensures compatibility).
 
         Returns:
             {"success": True, "data": {"path": "...", "duration_sec": ...}}
@@ -194,11 +235,12 @@ class PostProductionMixin:
             merge_audio_video(
                 video="recording.webm",
                 audio_tracks=[
-                    {"path": "intro.mp3", "start_ms": 0},
-                    {"path": "feature1.mp3", "start_ms": 3000},
-                    {"path": "outro.mp3", "start_ms": 10000},
+                    {"path": "intro.mp3", "start_ms": 0, "volume": 1.2},  # Louder
+                    {"path": "feature1.mp3", "start_ms": 3000, "volume": 1.0},
+                    {"path": "outro.mp3", "start_ms": 10000, "volume": 0.8},  # Quieter
                 ],
-                output="final_video.mp4"
+                output="final_video.mp4",
+                fast=True  # Skip video re-encoding for speed
             )
         """
         # Validate inputs
@@ -251,9 +293,13 @@ class PostProductionMixin:
             filter_parts = []
             for i, track in enumerate(audio_tracks):
                 delay_ms = track.get("start_ms", 0)
+                volume = track.get("volume", 1.0)
+                # Clamp volume to valid range
+                volume = max(0.0, min(2.0, volume))
                 # adelay filter: delay audio by specified milliseconds
+                # volume filter: adjust volume level (1.0 = 100%)
                 # Format: adelay=delays|delays (left|right channels)
-                filter_parts.append(f"[{i+1}:a]adelay={delay_ms}|{delay_ms}[a{i}]")
+                filter_parts.append(f"[{i+1}:a]adelay={delay_ms}|{delay_ms},volume={volume}[a{i}]")
 
             # Mix all delayed audio tracks together
             if len(audio_tracks) == 1:
@@ -283,15 +329,25 @@ class PostProductionMixin:
             cmd.extend(["-filter_complex", filter_complex])
             cmd.extend(["-map", "0:v", "-map", audio_output])
 
-            # Output settings - use libx264 for wide compatibility
-            cmd.extend([
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                str(output),
-            ])
+            # Output settings
+            if fast:
+                # Fast mode: copy video stream (no re-encoding), only encode audio
+                cmd.extend([
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    str(output),
+                ])
+            else:
+                # Quality mode: re-encode video with libx264 for compatibility
+                cmd.extend([
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "23",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    str(output),
+                ])
 
             # Run ffmpeg
             result = subprocess.run(
@@ -328,7 +384,7 @@ class PostProductionMixin:
             }
 
         except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>5 minutes)"}
+            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Merge failed: {exc}"}
 
@@ -349,8 +405,11 @@ class PostProductionMixin:
         is set to a low volume so it doesn't overpower speech.
         Call AFTER merge_audio_video() for best results.
 
+        Works with silent videos too - if no audio track exists, only the
+        music will be used (at full volume scaled by music_volume).
+
         Args:
-            video: Path to input video (should already have voiceover audio)
+            video: Path to input video (with or without audio)
             music: Path to background music file (MP3, WAV, etc.)
             output: Path for the output video file
             music_volume: Music volume level (0.0-1.0, default 0.15 = 15%)
@@ -405,32 +464,50 @@ class PostProductionMixin:
             except Exception:
                 pass
 
-            # Build audio filter
-            # 1. Loop music if needed, trim to video duration
-            # 2. Apply volume and fade in/out to music
-            # 3. Boost voice if needed, pad to video duration
-            # 4. Mix voice and music together
-            if video_duration_sec:
-                fade_out_start = max(0, video_duration_sec - fade_out_sec)
-                audio_filter = (
-                    # Music: loop, trim, volume, fade in/out
-                    f"[1:a]aloop=loop=-1:size=2e+09,atrim=duration={video_duration_sec},"
-                    f"volume={music_volume},"
-                    f"afade=t=in:st=0:d={fade_in_sec},"
-                    f"afade=t=out:st={fade_out_start}:d={fade_out_sec}[music];"
-                    # Voice: volume boost, pad to video duration
-                    f"[0:a]volume={voice_volume},apad=whole_dur={video_duration_sec}[voice];"
-                    # Mix: voice first (louder), then music
-                    "[voice][music]amix=inputs=2:duration=first:normalize=0[aout]"
-                )
+            # Check if input video has audio
+            has_audio = self._has_audio_stream(str(video_path))
+
+            # Build audio filter based on whether video has existing audio
+            if has_audio:
+                # Video has audio - mix voice and music
+                if video_duration_sec:
+                    fade_out_start = max(0, video_duration_sec - fade_out_sec)
+                    audio_filter = (
+                        # Music: loop, trim, volume, fade in/out
+                        f"[1:a]aloop=loop=-1:size=2e+09,atrim=duration={video_duration_sec},"
+                        f"volume={music_volume},"
+                        f"afade=t=in:st=0:d={fade_in_sec},"
+                        f"afade=t=out:st={fade_out_start}:d={fade_out_sec}[music];"
+                        # Voice: volume boost, pad to video duration
+                        f"[0:a]volume={voice_volume},apad=whole_dur={video_duration_sec}[voice];"
+                        # Mix: voice first (louder), then music
+                        "[voice][music]amix=inputs=2:duration=first:normalize=0[aout]"
+                    )
+                else:
+                    # No duration known - use simpler filter
+                    audio_filter = (
+                        f"[1:a]aloop=loop=-1:size=2e+09,volume={music_volume},"
+                        f"afade=t=in:st=0:d={fade_in_sec}[music];"
+                        f"[0:a]volume={voice_volume}[voice];"
+                        "[voice][music]amix=inputs=2:duration=first:normalize=0[aout]"
+                    )
             else:
-                # No duration known - use simpler filter
-                audio_filter = (
-                    f"[1:a]aloop=loop=-1:size=2e+09,volume={music_volume},"
-                    f"afade=t=in:st=0:d={fade_in_sec}[music];"
-                    f"[0:a]volume={voice_volume}[voice];"
-                    "[voice][music]amix=inputs=2:duration=first:normalize=0[aout]"
-                )
+                # Video is silent - use only music track
+                # Use higher volume since there's no voice to compete with
+                effective_volume = min(1.0, music_volume * 3)  # Boost for music-only
+                if video_duration_sec:
+                    fade_out_start = max(0, video_duration_sec - fade_out_sec)
+                    audio_filter = (
+                        f"[1:a]aloop=loop=-1:size=2e+09,atrim=duration={video_duration_sec},"
+                        f"volume={effective_volume},"
+                        f"afade=t=in:st=0:d={fade_in_sec},"
+                        f"afade=t=out:st={fade_out_start}:d={fade_out_sec}[aout]"
+                    )
+                else:
+                    audio_filter = (
+                        f"[1:a]aloop=loop=-1:size=2e+09,volume={effective_volume},"
+                        f"afade=t=in:st=0:d={fade_in_sec}[aout]"
+                    )
 
             cmd = [
                 "ffmpeg", "-y",
@@ -475,7 +552,7 @@ class PostProductionMixin:
             }
 
         except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>5 minutes)"}
+            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Add music failed: {exc}"}
 
@@ -542,6 +619,139 @@ class PostProductionMixin:
             return {"success": False, "message": "ffprobe timed out"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Failed to get duration: {exc}"}
+
+    async def convert_to_mp4(
+        self,
+        video: str,
+        output: Optional[str] = None,
+        quality: str = "fast",
+    ) -> Dict[str, Any]:
+        """
+        [Cinematic Engine] Convert video to MP4 format (fast WebM to MP4 conversion).
+
+        Converts WebM recordings to MP4 format for wider compatibility.
+        Uses hardware acceleration when available for faster conversion.
+
+        RECOMMENDED: Call this BEFORE merge_audio_video() to prepare recordings.
+
+        Args:
+            video: Path to input video file (WebM, MKV, AVI, etc.)
+            output: Output path (default: same name with .mp4 extension)
+            quality: Conversion quality:
+                - "fast": Quick conversion, reasonable quality (default)
+                - "copy": Stream copy if compatible (fastest, may not work for all inputs)
+                - "high": High quality re-encode (slowest, best quality)
+
+        Returns:
+            {"success": True, "data": {"path": "...", "duration_sec": ..., "quality": "..."}}
+
+        Example:
+            # Convert WebM recording to MP4
+            convert_to_mp4(video="recording.webm", quality="fast")
+
+            # Then merge audio
+            merge_audio_video(video="recording.mp4", audio_tracks=[...], output="final.mp4")
+        """
+        video_path = Path(video)
+        if not video_path.exists():
+            return {"success": False, "message": f"Video file not found: {video}"}
+
+        if not shutil.which("ffmpeg"):
+            return {
+                "success": False,
+                "message": "ffmpeg not found. Install from https://ffmpeg.org/",
+            }
+
+        # Determine output path
+        if output:
+            output_path = Path(output)
+        else:
+            output_path = video_path.with_suffix(".mp4")
+
+        # Don't overwrite input
+        if output_path == video_path:
+            output_path = video_path.with_stem(video_path.stem + "_converted").with_suffix(".mp4")
+
+        try:
+            # Build ffmpeg command based on quality setting
+            if quality == "copy":
+                # Try stream copy (fastest, may fail for incompatible codecs)
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", str(video_path),
+                    "-c", "copy",
+                    str(output_path),
+                ]
+            elif quality == "high":
+                # High quality re-encode
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", str(video_path),
+                    "-c:v", "libx264",
+                    "-preset", "slow",
+                    "-crf", "18",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    str(output_path),
+                ]
+            else:  # "fast" (default)
+                # Fast conversion with decent quality
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", str(video_path),
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "23",
+                    "-c:a", "aac",
+                    "-b:a", "128k",
+                    str(output_path),
+                ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=900,  # 15 min for long videos
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+                # If copy mode failed, suggest using fast mode
+                if quality == "copy" and "codec" in error_msg.lower():
+                    return {
+                        "success": False,
+                        "message": f"Stream copy failed (incompatible codec). Try quality='fast'. Error: {error_msg}",
+                    }
+                return {
+                    "success": False,
+                    "message": f"ffmpeg failed: {error_msg}",
+                }
+
+            if not output_path.exists():
+                return {"success": False, "message": "Output file was not created"}
+
+            # Get output duration
+            duration_sec = None
+            dur_result = await self.get_video_duration(str(output_path))
+            if dur_result["success"]:
+                duration_sec = dur_result["data"]["duration_sec"]
+
+            return {
+                "success": True,
+                "message": f"Converted to {output_path.name}",
+                "data": {
+                    "path": str(output_path.resolve()),
+                    "size_bytes": output_path.stat().st_size,
+                    "duration_sec": duration_sec,
+                    "quality": quality,
+                    "input_format": video_path.suffix.lower(),
+                },
+            }
+
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
+        except Exception as exc:  # pylint: disable=broad-except
+            return {"success": False, "message": f"Conversion failed: {exc}"}
 
     async def add_text_overlay(
         self,
@@ -720,7 +930,7 @@ class PostProductionMixin:
             }
 
         except subprocess.TimeoutExpired:
-            return {"success": False, "message": "ffmpeg timed out (>5 minutes)"}
+            return {"success": False, "message": "ffmpeg timed out (>15 minutes)"}
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": f"Add text overlay failed: {exc}"}
 
@@ -918,12 +1128,13 @@ class PostProductionMixin:
         min_duration: Optional[int] = None,
         max_duration: Optional[int] = None,
         limit: int = 10,
+        client_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         [Cinematic Engine] Search for royalty-free stock music from Jamendo.
 
         Returns a list of tracks that can be downloaded with download_stock_music().
-        Requires JAMENDO_CLIENT_ID environment variable.
+        Requires either client_id parameter OR JAMENDO_CLIENT_ID environment variable.
         Get a free API key at: https://devportal.jamendo.com/
 
         Args:
@@ -934,6 +1145,7 @@ class PostProductionMixin:
             min_duration: Minimum duration in seconds
             max_duration: Maximum duration in seconds
             limit: Max results to return (1-200, default 10)
+            client_id: Jamendo API client ID (optional, falls back to JAMENDO_CLIENT_ID env var)
 
         Returns:
             {
@@ -974,16 +1186,17 @@ class PostProductionMixin:
                 "message": "aiohttp not installed. Run: pip install aiohttp",
             }
 
-        client_id = os.environ.get("JAMENDO_CLIENT_ID")
-        if not client_id:
+        # Use provided client_id or fall back to environment variable
+        api_client_id = client_id or os.environ.get("JAMENDO_CLIENT_ID")
+        if not api_client_id:
             return {
                 "success": False,
-                "message": "JAMENDO_CLIENT_ID not set. Get a free key at https://devportal.jamendo.com/",
+                "message": "client_id parameter or JAMENDO_CLIENT_ID env var required. Get a free key at https://devportal.jamendo.com/",
             }
 
         # Build API URL - Jamendo tracks endpoint
         params: Dict[str, Any] = {
-            "client_id": client_id,
+            "client_id": api_client_id,
             "format": "json",
             "limit": min(max(1, limit), 200),
             "include": "musicinfo+licenses",
