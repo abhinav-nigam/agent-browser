@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-01-09
+
+### Fixed
+- **Critical**: MCP timeout during video processing - ffmpeg operations now use async subprocess to keep event loop responsive
+- Long-running `merge_audio_video`, `add_background_music`, `convert_to_mp4`, `add_text_overlay`, and `concatenate_videos` no longer block the MCP server
+
 ## [0.2.3] - 2026-01-09
 
 ### Added
