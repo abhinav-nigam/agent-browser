@@ -186,86 +186,74 @@ Every feature is designed for creating polished, production-ready content.
         print(f"  Raw video: {duration:.1f}s")
 
         # ============================================
-        # POST-PRODUCTION
+        # POST-PRODUCTION (using ffmpeg via subprocess - avoids MCP timeouts)
         # ============================================
+        import subprocess
+
+        current_video = raw_video
+
+        # Convert WebM to MP4 first
+        print("\n[6/10] Converting WebM to MP4...")
+        mp4_path = "videos/demo_converted.mp4"
+        convert_cmd = [
+            "ffmpeg", "-y", "-i", current_video,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", mp4_path
+        ]
+        result = subprocess.run(convert_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            current_video = mp4_path
+            print(f"  Converted: {mp4_path}")
+        else:
+            print(f"  Convert failed: {result.stderr[:200]}")
 
         # Merge voiceover
-        current_video = raw_video
         if voiceover_path:
-            print("\n[6/10] Merging voiceover...")
-            merge_result = await server.merge_audio_video(
-                video=current_video,
-                audio_tracks=[{"path": voiceover_path, "start_ms": 1000}],
-                output="videos/demo_with_voice.mp4"
-            )
-            if merge_result['success']:
-                current_video = merge_result['data']['path']
+            print("\n[7/10] Merging voiceover...")
+            with_voice_path = "videos/demo_with_voice.mp4"
+            merge_cmd = [
+                "ffmpeg", "-y", "-i", current_video, "-i", voiceover_path,
+                "-filter_complex", "[1:a]adelay=1000|1000[delayed]",
+                "-map", "0:v", "-map", "[delayed]",
+                "-c:v", "copy", "-c:a", "aac", with_voice_path
+            ]
+            result = subprocess.run(merge_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                current_video = with_voice_path
                 print(f"  With voiceover: {current_video}")
             else:
-                print(f"  Merge failed: {merge_result['message']}")
+                print(f"  Merge failed: {result.stderr[:200]}")
 
-        # Add background music
+        # Add background music (10% volume)
         if music_path:
-            print("\n[7/10] Adding background music...")
-            music_result = await server.add_background_music(
-                video=current_video,
-                music=music_path,
-                output="videos/demo_with_music.mp4",
-                music_volume=0.10,  # 10% - very subtle
-                voice_volume=1.4,   # 140% - boost voice
-                fade_in_sec=2.0,
-                fade_out_sec=3.0,
-            )
-            if music_result['success']:
-                current_video = music_result['data']['path']
+            print("\n[8/10] Adding background music...")
+            with_music_path = "videos/demo_with_music.mp4"
+            music_cmd = [
+                "ffmpeg", "-y", "-i", current_video, "-i", music_path,
+                "-filter_complex", "[1:a]volume=0.10[music];[0:a]volume=1.4[voice];[voice][music]amix=inputs=2:duration=first[aout]",
+                "-map", "0:v", "-map", "[aout]",
+                "-c:v", "copy", "-c:a", "aac", with_music_path
+            ]
+            result = subprocess.run(music_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                current_video = with_music_path
                 print(f"  With music: {current_video}")
             else:
-                print(f"  Music failed: {music_result['message']}")
+                print(f"  Music failed: {result.stderr[:200]}")
 
-        # Add intro title
-        print("\n[8/10] Adding intro title...")
-        title_result = await server.add_text_overlay(
-            video=current_video,
-            text="Cinematic Engine",
-            output="videos/demo_with_title.mp4",
-            position="center",
-            start_sec=0,
-            end_sec=3,
-            font_size=72,
-            font_color="white",
-            bg_color="black@0.7",
-            bg_padding=30,
-            fade_in_sec=0.8,
-            fade_out_sec=0.8,
-        )
-        if title_result['success']:
-            current_video = title_result['data']['path']
-            print(f"  With title: {current_video}")
-        else:
-            print(f"  Title failed: {title_result['message']}")
-
-        # Add subtitle
-        print("\n[9/10] Adding subtitle...")
-        subtitle_result = await server.add_text_overlay(
-            video=current_video,
-            text="Professional Video Production for AI Agents",
-            output="videos/demo_final.mp4",
-            position="bottom",
-            start_sec=1,
-            end_sec=4,
-            font_size=36,
-            font_color="white",
-            bg_color="black@0.5",
-            bg_padding=15,
-            fade_in_sec=0.5,
-            fade_out_sec=0.5,
-        )
-
+        # Add intro title and subtitle
+        print("\n[9/10] Adding title and subtitle overlays...")
         final_video = "videos/demo_final.mp4"
-        if subtitle_result['success']:
-            print(f"  Final video: {subtitle_result['data']['path']}")
+        title_cmd = [
+            "ffmpeg", "-y", "-i", current_video,
+            "-vf", "drawtext=text='Cinematic Engine':fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,3)',drawtext=text='Professional Video Production for AI Agents':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=h-100:enable='between(t,1,4)'",
+            "-c:a", "copy", final_video
+        ]
+        result = subprocess.run(title_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"  Final video: {final_video}")
         else:
-            print(f"  Subtitle failed: {subtitle_result['message']}")
+            print(f"  Title failed: {result.stderr[:200]}")
             final_video = current_video
 
         # Get final stats

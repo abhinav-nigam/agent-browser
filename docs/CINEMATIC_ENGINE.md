@@ -67,7 +67,7 @@ pip install ai-agent-browser[video]
 |------------|------|-------------|
 | `openai` | Optional pip extra | First `generate_voiceover()` call |
 | `elevenlabs` | Optional pip extra | First `generate_voiceover(provider="elevenlabs")` call |
-| `ffmpeg` | External CLI tool | First `merge_audio_video()` call, graceful fallback if missing |
+| `ffmpeg` | External CLI tool | Used via shell commands for post-production (avoids MCP timeouts) |
 
 **Lazy Loading:**
 ```python
@@ -78,7 +78,7 @@ await click("#login")
 # Video users - deps loaded on first use
 await start_recording()      # Injects cursor, starts capture
 await generate_voiceover()   # Lazy-loads TTS client
-await merge_audio_video()    # Checks for ffmpeg
+# Post-production: use ffmpeg via shell (see check_environment() for commands)
 ```
 
 ---
@@ -171,8 +171,8 @@ await start_recording()
 await smooth_click("#login", duration_ms=duration)
 await stop_recording()
 
-# 3. Mix in post-production
-await merge_audio_video(video, audio, output)
+# 3. Mix in post-production (use ffmpeg via shell)
+# ffmpeg -i video.webm -i audio.mp3 -c:v libx264 -c:a aac output.mp4
 ```
 
 **Deliverable:** Can record video with visible cursor, actions paced to voiceover.
@@ -210,38 +210,39 @@ await camera_reset(duration_ms=800)
 ### Phase 4: Post-Production (P3)
 **Goal:** Combine audio and video into final output (happens AFTER recording)
 
+> **Important:** Post-production uses ffmpeg via shell commands (not MCP tools) to avoid MCP timeout issues with long-running video operations. Call `check_environment()` to get copy-paste ffmpeg command examples!
+
 #### 4.1 Environment Validation
-- [ ] `check_environment()` - Verify all dependencies are available
-  - Returns: `{ffmpeg: bool, openai_key: bool, elevenlabs_key: bool}`
-  - Provides installation instructions if ffmpeg missing
-- [ ] Graceful fallback: If ffmpeg unavailable, output WebM without music mixing
+- [x] `check_environment()` - Verify ffmpeg, API keys, get workflow guide
+  - Returns: `{ffmpeg: bool, ffmpeg_examples: {...}, workflow: {...}, best_practices: [...]}`
+  - Provides 8 ready-to-use ffmpeg command examples
+- [x] `get_video_duration(path)` - Get video length in seconds/milliseconds
 
 **Technical Notes:**
-- ffmpeg required for: MP4 conversion, audio mixing, volume ducking
-- Without ffmpeg: Can still record WebM, generate TTS, but no post-production
+- ffmpeg required for: MP4 conversion, audio mixing, text overlays
+- Without ffmpeg: Can still record WebM, generate TTS
 - Auto-detect ffmpeg: `which ffmpeg` (Unix) or `where ffmpeg` (Windows)
 
-#### 4.2 Audio-Video Merge
-- [ ] `merge_audio_video(video_path, audio_path, output_path)` - Combine
-- [ ] Support multiple audio tracks with timing offsets
-- [ ] Output as MP4 (H.264) for compatibility
+#### 4.2 Audio-Video Merge (use ffmpeg via shell)
+```bash
+# Add voiceover to video
+ffmpeg -i video.webm -i voiceover.mp3 -c:v libx264 -c:a aac output.mp4
 
-**Technical Notes:**
-- Use ffmpeg: `ffmpeg -i video.webm -i audio.mp3 -c:v libx264 output.mp4`
-- Handle audio longer than video (extend last frame or trim)
-- Handle video longer than audio (silence padding)
+# Multiple audio tracks with timing
+ffmpeg -i video.mp4 -i audio1.mp3 -i audio2.mp3 \
+  -filter_complex "[1:a]adelay=0|0[a1];[2:a]adelay=5000|5000[a2];[a1][a2]amix=inputs=2[aout]" \
+  -map 0:v -map "[aout]" -c:v copy output.mp4
+```
 
-#### 4.3 Multi-Track Audio
-- [ ] `merge_audio_video(video, audios: [{path, start_ms}], output)` - Multiple voiceovers
-- [ ] Background music track with automatic volume ducking
-- [ ] `add_background_music(video, music_path, volume?, duck_during_voice?)` - Add music layer
+#### 4.3 Background Music (use ffmpeg via shell)
+```bash
+# Add background music at 15% volume
+ffmpeg -i video_with_voice.mp4 -i music.mp3 \
+  -filter_complex "[1:a]volume=0.15[music];[0:a][music]amix=inputs=2:duration=first[aout]" \
+  -map 0:v -map "[aout]" -c:v copy output.mp4
+```
 
-**Technical Notes:**
-- ffmpeg can duck music volume during voiceover using sidechain compression
-- Or simpler: lower music to 20% volume during voice segments, 50% otherwise
-- Provide royalty-free music library? Or just accept user-provided tracks
-
-**Deliverable:** Can produce final MP4 with synchronized voiceover AND background music.
+**Deliverable:** Can produce final MP4 with synchronized voiceover AND background music using ffmpeg shell commands.
 
 ---
 
@@ -313,11 +314,13 @@ clear_annotations() -> {success: bool}
 
 ### Post-Production
 ```python
-check_environment() -> {ffmpeg: bool, openai_key: bool, elevenlabs_key: bool, errors: [str]}
-merge_audio_video(video: str, audio: str, output: str) -> {path: str}
-merge_audio_video(video: str, audio_tracks: [{path, start_ms}], output: str) -> {path: str}
-add_background_music(video: str, music: str, volume?: float, duck_during_voice?: bool) -> {path: str}
-convert_to_mp4(input: str, output?: str, quality?: str) -> {path: str}
+check_environment() -> {ffmpeg: bool, ffmpeg_examples: {...}, workflow: {...}, best_practices: [...]}
+get_video_duration(path: str) -> {duration_sec: float, duration_ms: int}
+
+# For video processing, use ffmpeg via shell (avoids MCP timeouts):
+# ffmpeg -i video.webm -c:v libx264 -preset fast output.mp4
+# ffmpeg -i video.mp4 -i audio.mp3 -c:v copy -c:a aac output.mp4
+# See check_environment()["data"]["ffmpeg_examples"] for full command reference
 ```
 
 ### Music Library
@@ -471,31 +474,29 @@ await camera_reset(duration_ms=800)
 video_path = await stop_recording()
 
 # ============================================
-# STEP 3: Post-production - merge audio + video
+# STEP 3: Post-production - use ffmpeg via shell (avoids MCP timeouts)
 # ============================================
-await merge_audio_video(
-    video=video_path,
-    audio_tracks=[
-        {"path": voiceovers[0], "start_ms": 0},
-        {"path": voiceovers[1], "start_ms": durations[0]},
-        {"path": voiceovers[2], "start_ms": durations[0] + durations[1]},
-    ],
-    output="login_demo_with_voice.mp4"
-)
+# Run these commands in your shell/terminal:
+
+# Convert WebM to MP4
+# ffmpeg -i {video_path} -c:v libx264 -preset fast -crf 23 login_demo.mp4
+
+# Merge multiple voiceovers with timing offsets
+# ffmpeg -i login_demo.mp4 -i {voiceovers[0]} -i {voiceovers[1]} -i {voiceovers[2]} \
+#   -filter_complex "[1:a]adelay=0|0[a1];[2:a]adelay={durations[0]}|{durations[0]}[a2];[3:a]adelay={durations[0]+durations[1]}|{durations[0]+durations[1]}[a3];[a1][a2][a3]amix=inputs=3[aout]" \
+#   -map 0:v -map "[aout]" -c:v copy login_demo_with_voice.mp4
 
 # ============================================
 # STEP 4: Find and add background music
 # ============================================
-tracks = await search_music(mood="upbeat", genre="corporate", duration_max=60)
-music_path = await download_music(tracks[0]["id"])
+tracks = await list_stock_music(query="upbeat corporate", instrumental=True)
+music_result = await download_stock_music(url=tracks["data"]["tracks"][0]["download_url"])
+music_path = music_result["data"]["path"]
 
-await add_background_music(
-    video="login_demo_with_voice.mp4",
-    music=music_path,
-    volume=0.3,                     # 30% volume
-    duck_during_voice=True,         # Lower to 10% when voiceover plays
-    output="login_demo_final.mp4"
-)
+# Add background music (15% volume) - run in shell:
+# ffmpeg -i login_demo_with_voice.mp4 -i {music_path} \
+#   -filter_complex "[1:a]volume=0.15[music];[0:a][music]amix=inputs=2:duration=first[aout]" \
+#   -map 0:v -map "[aout]" -c:v copy login_demo_final.mp4
 ```
 
 ---

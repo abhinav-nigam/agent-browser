@@ -278,7 +278,7 @@ pip install ai-agent-browser[video]
 | **Annotations** | `annotate`, `clear_annotations` | Floating text callouts |
 | **Spotlight Effects** | `spotlight`, `clear_spotlight` | Ring highlights, spotlight dimming, focus effects |
 | **Camera** | `camera_zoom`, `camera_pan`, `camera_reset` | Ken Burns-style zoom/pan effects |
-| **Post-Production** | `convert_to_mp4`, `merge_audio_video`, `add_background_music`, `add_text_overlay`, `concatenate_videos` | Format conversion, audio mixing, titles, transitions |
+| **Post-Production** | `check_environment`, `get_video_duration` + ffmpeg | Use ffmpeg via shell (see examples below) |
 | **Stock Music** | `list_stock_music`, `download_stock_music` | Royalty-free music from Jamendo |
 | **Polish** | `smooth_scroll`, `type_human`, `set_presentation_mode` | Human-like interactions |
 
@@ -345,47 +345,26 @@ clear_annotations()
 stop_result = stop_recording()
 
 # ============================================
-# PHASE 3: POST-PRODUCTION
+# PHASE 3: POST-PRODUCTION (use ffmpeg via shell)
 # ============================================
+# NOTE: Use ffmpeg directly to avoid MCP timeout issues with long video operations.
+# check_environment() provides full ffmpeg command examples!
 
-raw_video = stop_result["data"]["path"]
+raw_video = stop_result["data"]["path"]  # WebM from recording
 
-# Convert WebM to MP4 (recommended first step)
-converted = convert_to_mp4(video=raw_video, quality="fast")
+# Run these commands in your shell/terminal:
 
-# Merge voiceover (starts at 1 second, with volume control)
-merge_audio_video(
-    video=converted["data"]["path"],
-    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000, "volume": 1.2}],
-    output="videos/with_voice.mp4",
-    fast=True  # Skip video re-encoding (much faster)
-)
+# 1. Convert WebM to MP4 (required for most editing)
+# ffmpeg -i recording.webm -c:v libx264 -preset fast -crf 23 -c:a aac output.mp4
 
-# Add background music (15% volume, auto-fades)
-add_background_music(
-    video="videos/with_voice.mp4",
-    music=music["data"]["path"],
-    output="videos/with_music.mp4",
-    music_volume=0.15,      # 15% - subtle background
-    voice_volume=1.3,       # 130% - boost voice clarity
-    fade_in_sec=2.0,
-    fade_out_sec=3.0
-)
+# 2. Merge voiceover (starts at 1 second)
+# ffmpeg -i output.mp4 -i voiceover.mp3 -filter_complex "[1:a]adelay=1000|1000[a1]" -map 0:v -map "[a1]" -c:v copy output_with_voice.mp4
 
-# Add title overlay
-add_text_overlay(
-    video="videos/with_music.mp4",
-    text="Product Demo",
-    output="videos/final.mp4",
-    position="center",
-    start_sec=0,
-    end_sec=3,
-    font_size=72,
-    font_color="white",
-    bg_color="black@0.7",
-    fade_in_sec=0.8,
-    fade_out_sec=0.8
-)
+# 3. Add background music (15% volume)
+# ffmpeg -i output_with_voice.mp4 -i music.mp3 -filter_complex "[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy output_with_music.mp4
+
+# 4. Add title overlay (centered, 0-3 seconds with fade)
+# ffmpeg -i output_with_music.mp4 -vf "drawtext=text='Product Demo':fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,3)'" -c:a copy final.mp4
 
 # Result: Professional 1080p video with voiceover, music, and title
 ```
@@ -408,39 +387,30 @@ spotlight(selector=".feature-card", style="focus", color="#10b981", dim_opacity=
 clear_spotlight()
 ```
 
-### Text Overlays
+### Text Overlays (ffmpeg)
 
-Add titles, captions, and annotations in post-production:
+Add titles, captions, and annotations in post-production using ffmpeg:
 
-```python
-# Centered title with fade
-add_text_overlay(
-    video="input.mp4",
-    text="Welcome to Our Demo",
-    output="with_title.mp4",
-    position="center",      # top, center, bottom
-    start_sec=0,
-    end_sec=4,
-    font_size=64,
-    font_color="white",
-    bg_color="black@0.6",   # Semi-transparent background
-    fade_in_sec=0.5,
-    fade_out_sec=0.5
-)
+```bash
+# Centered title (visible 0-4 seconds)
+ffmpeg -i input.mp4 -vf "drawtext=text='Welcome to Our Demo':fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,4)'" -c:a copy output.mp4
+
+# Top-positioned caption
+ffmpeg -i input.mp4 -vf "drawtext=text='Step 1':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=50" -c:a copy output.mp4
 ```
 
-### Video Transitions
+### Video Concatenation (ffmpeg)
 
-Join multiple clips with professional transitions:
+Join multiple clips using ffmpeg:
 
-```python
-# Concatenate with crossfade
-concatenate_videos(
-    videos=["scene1.mp4", "scene2.mp4", "scene3.mp4"],
-    output="combined.mp4",
-    transition="fade",       # fade, wipe, slide, dissolve
-    transition_duration_sec=1.0
-)
+```bash
+# Create a list file
+echo "file 'scene1.mp4'" > list.txt
+echo "file 'scene2.mp4'" >> list.txt
+echo "file 'scene3.mp4'" >> list.txt
+
+# Concatenate
+ffmpeg -f concat -safe 0 -i list.txt -c copy combined.mp4
 ```
 
 ### Virtual Cursor
@@ -458,14 +428,14 @@ The cursor uses cubic-bezier easing for natural motion, not robotic linear movem
 ### Best Practices
 
 1. **Generate voiceover first** - Audio duration drives video pacing
-2. **Convert WebM to MP4** - Use `convert_to_mp4()` after recording for faster processing
-3. **Use fast mode** - `merge_audio_video(fast=True)` skips video re-encoding (default)
-4. **Control per-track volume** - `audio_tracks=[{path, start_ms, volume: 1.2}]` (0.0-2.0)
+2. **Use `check_environment()`** - Get ffmpeg command examples and verify setup
+3. **Convert WebM to MP4** - `ffmpeg -i recording.webm -c:v libx264 -preset fast output.mp4`
+4. **Use `-c:v copy`** - Skip video re-encoding when possible (much faster)
 5. **Use presentation mode** - Hides scrollbars for cleaner visuals
 6. **Wait after effects** - Let animations complete before next action
 7. **Layer effects** - Combine spotlight + annotation for maximum impact
-8. **Keep music subtle** - 10-15% volume, let voice dominate
-9. **Silent videos work** - `add_background_music()` handles videos without audio
+8. **Keep music subtle** - Use `volume=0.15` in ffmpeg for background music
+9. **Use shell for ffmpeg** - Avoids MCP timeout issues with long operations
 10. **Add titles in post** - Text overlays are more flexible than annotations
 
 See `examples/cinematic_full_demo.py` for a complete working example.

@@ -179,62 +179,58 @@ async def create_demo_video():
         print(f"  Duration: {stop_result['data']['duration_sec']:.1f}s")
         print(f"  Saved to: {video_path}")
 
-        # Merge voiceover if available
+        # Post-production using ffmpeg via subprocess (avoids MCP timeouts)
+        import subprocess
         output_path = "videos/demo_final.mp4"
-        if voiceover_path:
-            print("\n[7/9] Merging voiceover...")
-            merge_result = await server.merge_audio_video(
-                video=video_path,
-                audio_tracks=[{"path": voiceover_path, "start_ms": 500}],
-                output="videos/demo_with_vo.mp4"
-            )
-            if merge_result['success']:
-                video_path = merge_result['data']['path']
-                print(f"  Merged: {video_path}")
-            else:
-                print(f"  Merge failed: {merge_result['message']}")
-        else:
-            print("\n[7/9] Skipping voiceover merge")
+        current_video = video_path
 
-        # Add background music if available
-        if music_path:
-            print("\n[8/9] Adding background music...")
-            music_result = await server.add_background_music(
-                video=video_path,
-                music=music_path,
-                output="videos/demo_with_music.mp4",
-                music_volume=0.12,  # 12% - subtle background
-                voice_volume=1.3,   # 130% - boost voice for clarity
-            )
-            if music_result['success']:
-                video_path = music_result['data']['path']
-                print(f"  With music: {video_path}")
-            else:
-                print(f"  Music failed: {music_result['message']}")
+        # Convert WebM to MP4 first
+        print("\n[7/9] Converting WebM to MP4...")
+        mp4_path = "videos/demo_converted.mp4"
+        convert_cmd = [
+            "ffmpeg", "-y", "-i", current_video,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", mp4_path
+        ]
+        result = subprocess.run(convert_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            current_video = mp4_path
+            print(f"  Converted: {mp4_path}")
         else:
-            print("\n[8/9] Skipping background music")
+            print(f"  Convert failed: {result.stderr[:200]}")
+
+        # Merge voiceover if available
+        if voiceover_path:
+            print("\n[8/9] Merging voiceover...")
+            with_vo_path = "videos/demo_with_vo.mp4"
+            merge_cmd = [
+                "ffmpeg", "-y", "-i", current_video, "-i", voiceover_path,
+                "-filter_complex", "[1:a]adelay=500|500[delayed]",
+                "-map", "0:v", "-map", "[delayed]",
+                "-c:v", "copy", "-c:a", "aac", with_vo_path
+            ]
+            result = subprocess.run(merge_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                current_video = with_vo_path
+                print(f"  Merged: {with_vo_path}")
+            else:
+                print(f"  Merge failed: {result.stderr[:200]}")
+        else:
+            print("\n[8/9] Skipping voiceover merge")
 
         # Add title overlay
         print("\n[9/9] Adding title overlay...")
-        title_result = await server.add_text_overlay(
-            video=video_path,
-            text="Cinematic Engine Demo",
-            output=output_path,
-            position="top",
-            start_sec=0,
-            end_sec=3,
-            font_size=42,
-            font_color="white",
-            bg_color="black@0.6",
-            fade_in_sec=0.5,
-            fade_out_sec=0.5,
-        )
-        if title_result['success']:
-            print(f"  Final video: {title_result['data']['path']}")
+        title_cmd = [
+            "ffmpeg", "-y", "-i", current_video,
+            "-vf", "drawtext=text='Cinematic Engine Demo':fontsize=42:fontcolor=white:x=(w-text_w)/2:y=50:enable='between(t,0,3)'",
+            "-c:a", "copy", output_path
+        ]
+        result = subprocess.run(title_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"  Final video: {output_path}")
         else:
-            print(f"  Title failed: {title_result['message']}")
-            # Use video without title
-            output_path = video_path
+            print(f"  Title failed: {result.stderr[:200]}")
+            output_path = current_video
 
         # Get final file size
         from pathlib import Path

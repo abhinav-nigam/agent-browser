@@ -115,10 +115,11 @@ class RecordingMixin:
         7. wait() - IMPORTANT: Wait > animation duration!
         8. clear_spotlight() / clear_annotations() before switching
 
-        AFTER RECORDING (stop_recording):
-        1. merge_audio_video() - Add voiceover
-        2. add_background_music() - Layer music (15% volume)
-        3. add_text_overlay() - Add titles
+        AFTER RECORDING (use ffmpeg via shell - avoids MCP timeouts):
+        1. Convert: ffmpeg -i recording.webm -c:v libx264 -preset fast output.mp4
+        2. Add voice: ffmpeg -i output.mp4 -i voice.mp3 -c:v copy -c:a aac final.mp4
+        3. Add music: ffmpeg -i final.mp4 -i music.mp3 -filter_complex "[1:a]volume=0.15[bg];[0:a][bg]amix" out.mp4
+        See check_environment() for full ffmpeg command examples!
 
         Args:
             filename: Output filename (without extension)

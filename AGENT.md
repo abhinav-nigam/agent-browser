@@ -154,16 +154,26 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 - `camera_pan(selector, duration_ms?)` - Pan to center on element without zooming
 - `camera_reset(duration_ms?)` - Reset camera to normal 1.0 scale view
 
-**Phase 4: Post-Production** (requires ffmpeg installed)
-- `check_environment()` - Verify ffmpeg installation and API keys (OPENAI_API_KEY, ELEVENLABS_API_KEY, JAMENDO_CLIENT_ID). Returns workflow guide!
-- `convert_to_mp4(video, output?, quality?)` - Convert WebM to MP4. Quality: "fast" (default, quick), "copy" (fastest, may fail), "high" (slowest, best)
-- `merge_audio_video(video, audio_tracks, output, fast?)` - Merge video with voiceover tracks. Each track: `{path, start_ms, volume}`. Volume 0.0-2.0. `fast=true` skips video re-encoding (default)
-- `add_background_music(video, music, output, music_volume?, voice_volume?, fade_in_sec?, fade_out_sec?)` - Add background music. Works with silent videos!
+**Phase 4: Post-Production** (requires ffmpeg - use via shell to avoid MCP timeouts)
+- `check_environment()` - Verify ffmpeg installation, API keys, and get ffmpeg command examples! Returns workflow guide with copy-paste commands.
 - `get_video_duration(path)` - Get video duration in seconds/milliseconds
-- `add_text_overlay(video, text, output, position?, start_sec?, end_sec?, font_size?, font_color?, bg_color?, fade_in_sec?, fade_out_sec?)` - Add title/caption overlays with timing and fade effects
-- `concatenate_videos(videos, output, transition?, transition_duration_sec?)` - Join multiple clips with transitions (fade, wipe, slide, dissolve)
 - `list_stock_music(query?, tags?, instrumental?, speed?, min_duration?, max_duration?, client_id?)` - Search Jamendo for CC-licensed music (pass client_id or set JAMENDO_CLIENT_ID env)
 - `download_stock_music(url, output?, filename?)` - Download a stock music track to local cache
+
+**Use ffmpeg directly via shell for video processing:**
+```bash
+# Convert WebM to MP4
+ffmpeg -i recording.webm -c:v libx264 -preset fast -crf 23 output.mp4
+
+# Add voiceover
+ffmpeg -i video.mp4 -i voiceover.mp3 -c:v copy -c:a aac -shortest output.mp4
+
+# Add background music (15% volume)
+ffmpeg -i video.mp4 -i music.mp3 -filter_complex "[1:a]volume=0.15[bg];[0:a][bg]amix" -c:v copy output.mp4
+
+# Add text overlay
+ffmpeg -i video.mp4 -vf "drawtext=text='Title':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2" output.mp4
+```
 
 **Phase 5: Polish**
 - `smooth_scroll(direction, amount?, duration_ms?)` - Cinematic smooth scrolling with easing (vs instant jump)
@@ -400,47 +410,18 @@ clear_annotations()
 result = stop_recording()
 
 // ============================================
-// PHASE 3: POST-PRODUCTION (audio + polish)
+// PHASE 3: POST-PRODUCTION (use ffmpeg via shell)
 // ============================================
+// NOTE: Use ffmpeg directly to avoid MCP timeout issues.
+// check_environment() returns full ffmpeg command examples!
 
-raw_video = result["data"]["path"]
+raw_video = result["data"]["path"]  // WebM from recording
 
-// Convert WebM to MP4 first (recommended for faster processing)
-converted = convert_to_mp4(video=raw_video, quality="fast")
-
-// Merge voiceover (start at 1 second, with volume control)
-merge_audio_video(
-    video=converted["data"]["path"],
-    audio_tracks=[{"path": vo["data"]["path"], "start_ms": 1000, "volume": 1.2}],
-    output="videos/with_voice.mp4",
-    fast=true  // Skip video re-encoding (default, much faster)
-)
-
-// Add background music
-add_background_music(
-    video="videos/with_voice.mp4",
-    music=music["data"]["path"],
-    output="videos/with_music.mp4",
-    music_volume=0.15,    // 15% - subtle
-    voice_volume=1.3,     // 130% - boost clarity
-    fade_in_sec=2.0,
-    fade_out_sec=3.0
-)
-
-// Add title overlay
-add_text_overlay(
-    video="videos/with_music.mp4",
-    text="Product Demo",
-    output="videos/final.mp4",
-    position="center",
-    start_sec=0,
-    end_sec=3,
-    font_size=72,
-    font_color="white",
-    bg_color="black@0.7",
-    fade_in_sec=0.8,
-    fade_out_sec=0.8
-)
+// Run in shell (not as MCP tools):
+// 1. Convert: ffmpeg -i recording.webm -c:v libx264 -preset fast output.mp4
+// 2. Add voice: ffmpeg -i output.mp4 -i voice.mp3 -c:v copy -c:a aac final_with_voice.mp4
+// 3. Add music: ffmpeg -i final_with_voice.mp4 -i music.mp3 -filter_complex "[1:a]volume=0.15[bg];[0:a][bg]amix" -c:v copy final.mp4
+// 4. Add title: ffmpeg -i final.mp4 -vf "drawtext=text='Demo':fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2" output.mp4
 ```
 
 ### Spotlight effects (Cinematic Engine)
@@ -458,65 +439,44 @@ spotlight(selector=".feature", style="focus", color="#10b981", dim_opacity=0.6)
 clear_spotlight()
 ```
 
-### Text overlays (Cinematic Engine)
-```
-// Add title at start of video
-add_text_overlay(
-    video="input.mp4",
-    text="Welcome to Our Demo",
-    output="with_title.mp4",
-    position="center",      // top, center, bottom
-    start_sec=0,
-    end_sec=4,
-    font_size=64,
-    font_color="white",
-    bg_color="black@0.6",   // Semi-transparent
-    fade_in_sec=0.5,
-    fade_out_sec=0.5
-)
+### Text overlays (ffmpeg via shell)
+```bash
+# Centered title (visible 0-4 seconds)
+ffmpeg -i input.mp4 -vf "drawtext=text='Welcome to Our Demo':fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,4)'" -c:a copy with_title.mp4
 
-// Add caption at specific time
-add_text_overlay(
-    video="with_title.mp4",
-    text="Key Feature Highlight",
-    output="with_caption.mp4",
-    position="bottom",
-    start_sec=10,
-    end_sec=15,
-    font_size=36
-)
+# Bottom caption (visible 10-15 seconds)
+ffmpeg -i with_title.mp4 -vf "drawtext=text='Key Feature':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=h-50:enable='between(t,10,15)'" -c:a copy with_caption.mp4
 ```
 
-### Multi-scene videos with transitions (Cinematic Engine)
-```
-// Record multiple scenes
+### Multi-scene video concatenation (ffmpeg via shell)
+```bash
+# Record multiple scenes (produces scene1.webm, scene2.webm)
 start_recording(width=1920, height=1080)
-// ... scene 1 actions ...
-stop_recording()  // saves scene1.webm
+# ... scene 1 actions ...
+stop_recording()
 
 start_recording(width=1920, height=1080)
-// ... scene 2 actions ...
-stop_recording()  // saves scene2.webm
+# ... scene 2 actions ...
+stop_recording()
 
-// Join with crossfade transition
-concatenate_videos(
-    videos=["videos/scene1.webm", "videos/scene2.webm"],
-    output="videos/combined.mp4",
-    transition="fade",       // fade, wipe, slide, dissolve
-    transition_duration_sec=1.0
-)
+# Concatenate in shell:
+# 1. Create list file
+echo "file 'scene1.webm'" > list.txt
+echo "file 'scene2.webm'" >> list.txt
+
+# 2. Join clips
+ffmpeg -f concat -safe 0 -i list.txt -c:v libx264 -c:a aac combined.mp4
 ```
 
 **Cinematic Engine best practices:**
 - **Generate voiceover first** - Audio duration determines video pacing
-- **Convert WebM to MP4** - Use `convert_to_mp4()` after recording for faster processing
-- **Use fast mode** - `merge_audio_video(fast=true)` skips video re-encoding (default)
-- **Control per-track volume** - `audio_tracks=[{path, start_ms, volume: 1.2}]` (0.0-2.0)
+- **Use check_environment()** - Get ffmpeg command examples and verify setup
+- **Use ffmpeg via shell** - Avoids MCP timeout issues with long operations
+- **Use `-c:v copy`** - Skip video re-encoding when possible (much faster)
 - **Use presentation mode** - Cleaner visuals without scrollbars
 - **Wait after effects** - Let animations complete (wait > duration_ms)
 - **Layer effects** - Combine spotlight + annotation for emphasis
-- **Keep music subtle** - 10-15% volume, voice should dominate
-- **Silent videos work** - `add_background_music()` handles videos without audio
+- **Keep music subtle** - Use `volume=0.15` in ffmpeg for background music
 - **Add titles in post** - Text overlays more flexible than annotations
 - **Clear before switching** - Always clear_spotlight() before new spotlight
 

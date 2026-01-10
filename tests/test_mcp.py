@@ -957,108 +957,52 @@ async def test_postproduction_tools_exist():
     server = BrowserServer("test-postprod")
     tool_names = [t.name for t in server.server._tool_manager.list_tools()]
 
+    # Fast utility tools (kept)
     assert "check_environment" in tool_names
-    assert "merge_audio_video" in tool_names
-    assert "add_background_music" in tool_names
     assert "get_video_duration" in tool_names
+    assert "list_stock_music" in tool_names
+    assert "download_stock_music" in tool_names
+
+    # Slow ffmpeg tools removed - agents should use ffmpeg directly via shell
+    # merge_audio_video, add_background_music, convert_to_mp4, add_text_overlay, concatenate_videos
 
 
 @pytest.mark.no_browser
 @pytest.mark.asyncio
 async def test_check_environment():
-    """Test check_environment returns environment status."""
+    """Test check_environment returns environment status and workflow guide."""
     server = BrowserServer("test-postprod")
     result = await server.check_environment()
 
     assert "success" in result
     assert "data" in result
-    assert "ffmpeg" in result["data"]
-    assert "openai_key" in result["data"]
-    assert "elevenlabs_key" in result["data"]
-    assert "errors" in result["data"]
-    assert "warnings" in result["data"]
+    data = result["data"]
 
+    # Core environment checks
+    assert "ffmpeg" in data
+    assert "openai_key" in data
+    assert "elevenlabs_key" in data
+    assert "errors" in data
+    assert "warnings" in data
 
-@pytest.mark.no_browser
-@pytest.mark.asyncio
-async def test_merge_audio_video_missing_video():
-    """Test merge_audio_video handles missing video file."""
-    server = BrowserServer("test-postprod")
-    result = await server.merge_audio_video(
-        video="/nonexistent/video.webm",
-        audio_tracks=[{"path": "/some/audio.mp3", "start_ms": 0}],
-        output="/output.mp4",
-    )
+    # Workflow guide (3 phases)
+    assert "workflow" in data
+    workflow = data["workflow"]
+    assert "phase1_preparation" in workflow
+    assert "phase2_recording" in workflow
+    assert "phase3_postproduction" in workflow
 
-    assert result["success"] is False
-    assert "not found" in result["message"].lower()
+    # ffmpeg examples for agents (since MCP tools removed)
+    assert "ffmpeg_examples" in data
+    examples = data["ffmpeg_examples"]
+    assert "convert_webm_to_mp4" in examples
+    assert "merge_audio_video" in examples
+    assert "add_background_music" in examples
+    assert "command" in examples["merge_audio_video"]
 
-
-@pytest.mark.no_browser
-@pytest.mark.asyncio
-async def test_merge_audio_video_no_tracks():
-    """Test merge_audio_video handles empty audio tracks."""
-    import tempfile
-    import os
-
-    # Create a temporary "video" file so we get past the video check
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-        f.write(b"fake video content")
-        video_path = f.name
-
-    try:
-        server = BrowserServer("test-postprod")
-        result = await server.merge_audio_video(
-            video=video_path,
-            audio_tracks=[],
-            output="/output.mp4",
-        )
-
-        assert result["success"] is False
-        assert "no audio" in result["message"].lower()
-    finally:
-        os.unlink(video_path)
-
-
-@pytest.mark.no_browser
-@pytest.mark.asyncio
-async def test_add_background_music_missing_video():
-    """Test add_background_music handles missing video file."""
-    server = BrowserServer("test-postprod")
-    result = await server.add_background_music(
-        video="/nonexistent/video.mp4",
-        music="/some/music.mp3",
-        output="/output.mp4",
-    )
-
-    assert result["success"] is False
-    assert "not found" in result["message"].lower()
-
-
-@pytest.mark.no_browser
-@pytest.mark.asyncio
-async def test_add_background_music_missing_music():
-    """Test add_background_music handles missing music file."""
-    import tempfile
-    import os
-
-    # Create a temporary "video" file
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-        f.write(b"fake video content")
-        video_path = f.name
-
-    try:
-        server = BrowserServer("test-postprod")
-        result = await server.add_background_music(
-            video=video_path,
-            music="/nonexistent/music.mp3",
-            output="/output.mp4",
-        )
-
-        assert result["success"] is False
-        assert "not found" in result["message"].lower()
-    finally:
-        os.unlink(video_path)
+    # Best practices
+    assert "best_practices" in data
+    assert len(data["best_practices"]) > 0
 
 
 @pytest.mark.no_browser

@@ -187,14 +187,11 @@ class CinematicMixin(TTSMixin, RecordingMixin, AnnotationMixin, CameraMixin, Pos
         server.tool()(self.camera_pan)
         server.tool()(self.camera_reset)
 
-        # Phase 4: Post-Production
+        # Phase 4: Post-Production (utility tools only)
+        # NOTE: Slow ffmpeg tools removed - agents should use ffmpeg directly via shell
+        # to avoid MCP timeout issues. Use check_environment() for ffmpeg command examples.
         server.tool()(self.check_environment)
-        server.tool()(self.convert_to_mp4)
-        server.tool()(self.merge_audio_video)
-        server.tool()(self.add_background_music)
         server.tool()(self.get_video_duration)
-        server.tool()(self.add_text_overlay)
-        server.tool()(self.concatenate_videos)
         server.tool()(self.list_stock_music)
         server.tool()(self.download_stock_music)
 

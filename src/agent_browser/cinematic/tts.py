@@ -41,7 +41,7 @@ class TTSMixin:
         1. generate_voiceover() -> get audio path
         2. get_audio_duration() -> know timing (e.g., 8 seconds)
         3. start_recording() -> record video paced to audio duration
-        4. merge_audio_video() -> combine in post-production
+        4. Use ffmpeg via shell -> combine in post-production (see check_environment())
 
         Lazy-loads the TTS client on first call. Caches audio files to avoid
         redundant API costs during retakes.

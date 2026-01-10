@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-01-10
+
+### Changed
+- **Breaking**: Removed slow post-production MCP tools that caused MCP timeouts: `merge_audio_video`, `add_background_music`, `convert_to_mp4`, `add_text_overlay`, `concatenate_videos`
+- Agents should now use ffmpeg directly via shell commands for video processing (avoids MCP protocol-level timeouts)
+- `check_environment()` now returns comprehensive `ffmpeg_examples` dict with copy-paste commands for all post-production tasks
+- Updated workflow guide in `check_environment()` to recommend shell-based ffmpeg for Phase 3
+
+### Added
+- `ffmpeg_examples` in `check_environment()` output with 8 ready-to-use ffmpeg commands
+- Updated best practices for shell-based video processing workflow
+
+### Kept (fast utility tools)
+- `check_environment()` - Environment check and ffmpeg command examples
+- `get_video_duration()` - Quick video duration lookup
+- `list_stock_music()` - Jamendo music search
+- `download_stock_music()` - Music download
+
 ## [0.2.4] - 2026-01-09
 
 ### Fixed
