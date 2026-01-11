@@ -137,7 +137,12 @@ You do NOT need to call `wait_for` before `click` or `fill`. Only use explicit w
 ### Cinematic Engine - Video Production (requires `pip install ai-agent-browser[video]`)
 
 **Phase 1: Voice & Timing**
-- `generate_voiceover(text, provider?, voice?, speed?)` - Generate TTS audio using OpenAI or ElevenLabs. Cached to avoid redundant API calls
+- `generate_voiceover(text, provider?, voice?, speed?, stability?, similarity_boost?, style?, use_speaker_boost?)` - Generate TTS audio using OpenAI or ElevenLabs. Cached to avoid redundant API calls.
+  - ElevenLabs voice modulation for natural speech:
+    - `stability` (0.0-1.0): Lower = more expressive. Try 0.3-0.4 for natural speech
+    - `similarity_boost` (0.0-1.0): Voice clarity. Try 0.5-0.7 for natural speech
+    - `style` (0.0-1.0): Expressiveness. Try 0.2-0.4 for engaging narration
+  - Recommended voices: `H2JKG8QcEaH9iUMauArc` (Abhinav), `qr9D67rNgxf5xNgv46nx` (Tarun)
 - `get_audio_duration(path)` - Get audio file duration in ms/sec for timing video actions
 
 **Phase 2: Recording & Virtual Actor**
@@ -358,8 +363,11 @@ check_environment()
 // 2. Generate voiceover FIRST - timing drives everything
 vo = generate_voiceover(
     text="Welcome to our product demo. Watch the key features in action.",
-    voice="21m00Tcm4TlvDq8ikWAM",  // ElevenLabs Rachel
-    provider="elevenlabs"
+    voice="H2JKG8QcEaH9iUMauArc",   // Abhinav - warm, natural
+    provider="elevenlabs",
+    stability=0.35,                 // More expressive (less robotic)
+    similarity_boost=0.6,           // Balanced clarity
+    style=0.3                       // Some emotion
 )
 vo_duration = get_audio_duration(vo["data"]["path"])
 // Know your audio is ~8 seconds - plan video actions accordingly

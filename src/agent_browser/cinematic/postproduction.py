@@ -153,11 +153,25 @@ class PostProductionMixin:
             "phase1_preparation": {
                 "description": "Do this BEFORE recording! Audio timing drives video pacing.",
                 "steps": [
-                    "1. generate_voiceover(text, provider='openai') - Create narration",
+                    "1. generate_voiceover(text, provider='elevenlabs', voice='H2JKG8QcEaH9iUMauArc') - Create narration",
                     "2. get_audio_duration(path) - Know exact timing (e.g., 8 seconds)",
                     "3. list_stock_music(query='corporate', instrumental=True) - Find background music",
                     "4. download_stock_music(url) - Download selected track",
-                ]
+                ],
+                "voiceover_tips": {
+                    "recommended_voices": {
+                        "H2JKG8QcEaH9iUMauArc": "Abhinav - warm, natural tone",
+                        "qr9D67rNgxf5xNgv46nx": "Tarun - expressive delivery",
+                    },
+                    "voice_modulation": {
+                        "stability": "0.0-1.0: Lower = more expressive/variable. Default 0.4",
+                        "similarity_boost": "0.0-1.0: Voice clarity. Default 0.65",
+                        "style": "0.0-1.0: Emotion/expressiveness. Default 0.2",
+                        "use_speaker_boost": "bool: Enhance clarity. Default True",
+                    },
+                    "for_natural_speech": "Use stability=0.35, style=0.3 for less robotic output",
+                    "for_consistent_speech": "Use stability=0.7, style=0.0 for predictable output",
+                }
             },
             "phase2_recording": {
                 "description": "Record browser with effects. Pace actions to match voiceover duration.",
@@ -233,6 +247,8 @@ class PostProductionMixin:
 
         best_practices = [
             "ALWAYS generate voiceover FIRST - audio duration determines video pacing",
+            "For natural-sounding voiceover: use provider='elevenlabs' with stability=0.35, style=0.3",
+            "Recommended voices: H2JKG8QcEaH9iUMauArc (Abhinav - warm), qr9D67rNgxf5xNgv46nx (Tarun - expressive)",
             "Use ffmpeg via shell for post-production (avoids MCP timeout issues)",
             "For WebM to MP4: ffmpeg -i input.webm -c:v libx264 -preset fast output.mp4",
             "Keep background music at 10-15% volume (volume=0.15 in ffmpeg)",

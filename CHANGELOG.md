@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-01-11
+
+### Added
+- **Voice modulation parameters** for ElevenLabs TTS to reduce robotic-sounding output:
+  - `stability` (0.0-1.0): Lower values = more expressive speech. Default 0.4
+  - `similarity_boost` (0.0-1.0): Voice clarity. Default 0.65
+  - `style` (0.0-1.0): Expressiveness/emotion. Default 0.2
+  - `use_speaker_boost` (bool): Enhance clarity. Default True
+- New recommended voices for natural speech:
+  - `H2JKG8QcEaH9iUMauArc` (Abhinav - warm, natural)
+  - `qr9D67rNgxf5xNgv46nx` (Tarun - expressive)
+
+### Changed
+- ElevenLabs default settings optimized for less robotic output (stability=0.4, style=0.2)
+- Updated all documentation and examples to use new voice recommendations and modulation
+
 ## [0.2.5] - 2026-01-10
 
 ### Changed

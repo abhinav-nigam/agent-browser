@@ -64,8 +64,11 @@ Every feature is designed for creating polished, production-ready content.
 
         vo_result = await server.generate_voiceover(
             text=voiceover_text,
-            voice="21m00Tcm4TlvDq8ikWAM",
-            provider="elevenlabs"
+            voice="H2JKG8QcEaH9iUMauArc",   # Abhinav - warm, natural
+            provider="elevenlabs",
+            stability=0.35,                 # More expressive (less robotic)
+            similarity_boost=0.6,           # Balanced clarity
+            style=0.3                       # Some emotion
         )
         voiceover_path = vo_result['data']['path'] if vo_result['success'] else None
         if voiceover_path:

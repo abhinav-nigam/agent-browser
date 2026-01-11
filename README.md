@@ -295,8 +295,11 @@ check_environment()  # Verify ffmpeg, API keys
 # Generate voiceover FIRST (timing drives everything)
 vo = generate_voiceover(
     text="Welcome to our product. Watch as we explore the key features.",
-    voice="21m00Tcm4TlvDq8ikWAM",  # ElevenLabs Rachel voice
-    provider="elevenlabs"
+    voice="H2JKG8QcEaH9iUMauArc",   # Abhinav - warm, natural
+    provider="elevenlabs",
+    stability=0.35,                 # More expressive (less robotic)
+    similarity_boost=0.6,           # Balanced clarity
+    style=0.3                       # Some emotion
 )
 vo_duration = get_audio_duration(vo["data"]["path"])  # ~8 seconds
 

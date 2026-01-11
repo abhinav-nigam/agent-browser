@@ -30,6 +30,10 @@ class TTSMixin:
         provider: str = "openai",
         voice: str = "alloy",
         speed: float = 1.0,
+        stability: Optional[float] = None,
+        similarity_boost: Optional[float] = None,
+        style: Optional[float] = None,
+        use_speaker_boost: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         [Cinematic Engine - PHASE 1] Generate voiceover audio from text using TTS.
@@ -50,17 +54,33 @@ class TTSMixin:
             text: The text to convert to speech
             provider: TTS provider - "openai" (default) or "elevenlabs"
             voice: Voice ID - OpenAI: alloy, echo, fable, onyx, nova, shimmer
-                   ElevenLabs: use voice ID like "21m00Tcm4TlvDq8ikWAM" (Rachel)
+                   ElevenLabs recommended voices (natural, expressive):
+                   - "H2JKG8QcEaH9iUMauArc" (Abhinav - warm, natural male)
+                   - "qr9D67rNgxf5xNgv46nx" (Tarun - expressive male)
             speed: Speech speed multiplier (0.25 to 4.0, default 1.0)
+
+            ElevenLabs voice modulation (for natural, less robotic speech):
+            stability: Voice consistency (0.0-1.0). Lower = more expressive/variable,
+                      higher = more consistent. Default 0.5. Try 0.3-0.4 for natural speech.
+            similarity_boost: Voice clarity (0.0-1.0). Higher = clearer but may sound
+                             artificial. Default 0.75. Try 0.5-0.7 for natural speech.
+            style: Expressiveness/emotion (0.0-1.0). Higher = more emotive delivery.
+                  Default 0. Try 0.2-0.5 for engaging narration. Only works with v2 models.
+            use_speaker_boost: Enhance speaker clarity (bool). Default True.
+                              Can help with clarity but may reduce naturalness.
 
         Returns:
             {"success": True, "data": {"path": "/path/to/audio.mp3", "cached": bool}}
 
         Example:
+            # Natural, expressive voiceover
             vo = generate_voiceover(
                 text="Welcome to our product demo.",
                 provider="elevenlabs",
-                voice="21m00Tcm4TlvDq8ikWAM"  # Rachel voice
+                voice="H2JKG8QcEaH9iUMauArc",  # Abhinav - warm, natural
+                stability=0.35,                 # More expressive
+                similarity_boost=0.6,           # Balanced clarity
+                style=0.3                       # Some emotion
             )
             duration = get_audio_duration(vo["data"]["path"])
             # Now record video paced to duration["data"]["duration_sec"]
@@ -70,8 +90,9 @@ class TTSMixin:
 
         try:
             # Cache key based on content hash (same text+settings = same file)
+            # Include voice modulation params for ElevenLabs
             cache_key = hashlib.md5(
-                f"{text}:{provider}:{voice}:{speed}".encode()
+                f"{text}:{provider}:{voice}:{speed}:{stability}:{similarity_boost}:{style}:{use_speaker_boost}".encode()
             ).hexdigest()[:12]
             cache_path = self._audio_cache_dir / f"{cache_key}.mp3"
 
@@ -109,13 +130,24 @@ class TTSMixin:
 
             elif provider == "elevenlabs":
                 try:
-                    from elevenlabs import ElevenLabs
+                    from elevenlabs import ElevenLabs, VoiceSettings
 
                     client = ElevenLabs()
+
+                    # Build voice settings for natural speech
+                    # Defaults optimized for less robotic output
+                    voice_settings = VoiceSettings(
+                        stability=stability if stability is not None else 0.4,
+                        similarity_boost=similarity_boost if similarity_boost is not None else 0.65,
+                        style=style if style is not None else 0.2,
+                        use_speaker_boost=use_speaker_boost if use_speaker_boost is not None else True,
+                    )
+
                     audio = client.text_to_speech.convert(
                         voice_id=voice,
                         text=text,
                         model_id="eleven_multilingual_v2",
+                        voice_settings=voice_settings,
                     )
                     # Write audio bytes to file
                     with open(cache_path, "wb") as f:

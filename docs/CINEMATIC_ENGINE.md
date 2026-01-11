@@ -403,13 +403,27 @@ response.stream_to_file("output.mp3")
 
 #### ElevenLabs
 ```python
-from elevenlabs import generate, save
-audio = generate(
+from elevenlabs import ElevenLabs, VoiceSettings
+
+client = ElevenLabs()
+# Recommended voices for natural speech:
+# - H2JKG8QcEaH9iUMauArc (Abhinav - warm, natural)
+# - qr9D67rNgxf5xNgv46nx (Tarun - expressive)
+
+audio = client.text_to_speech.convert(
     text="Your text here",
-    voice="Rachel",
-    model="eleven_monolingual_v1"
+    voice_id="H2JKG8QcEaH9iUMauArc",
+    model_id="eleven_multilingual_v2",
+    voice_settings=VoiceSettings(
+        stability=0.35,           # Lower = more expressive
+        similarity_boost=0.6,     # Balanced clarity
+        style=0.3,                # Some emotion
+        use_speaker_boost=True
+    )
 )
-save(audio, "output.mp3")
+with open("output.mp3", "wb") as f:
+    for chunk in audio:
+        f.write(chunk)
 ```
 
 ---

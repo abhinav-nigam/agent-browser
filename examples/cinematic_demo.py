@@ -68,8 +68,11 @@ async def create_demo_video():
             print("\n[2/9] Generating voiceover with ElevenLabs...")
             vo_result = await server.generate_voiceover(
                 text="Welcome to our demo. Watch as we explore this page with smooth animations, highlights, and professional effects.",
-                voice="21m00Tcm4TlvDq8ikWAM",  # Rachel - clear female voice
-                provider="elevenlabs"
+                voice="H2JKG8QcEaH9iUMauArc",   # Abhinav - warm, natural
+                provider="elevenlabs",
+                stability=0.35,                 # More expressive (less robotic)
+                similarity_boost=0.6,           # Balanced clarity
+                style=0.3                       # Some emotion
             )
             if vo_result['success']:
                 voiceover_path = vo_result['data']['path']
