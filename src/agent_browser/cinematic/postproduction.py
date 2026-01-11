@@ -199,6 +199,22 @@ class PostProductionMixin:
                     "5. Concatenate videos: ffmpeg -f concat -safe 0 -i files.txt -c copy output.mp4",
                 ]
             },
+            "ken_burns_workflow": {
+                "description": "Alternative to recording: Create videos from high-quality screenshots with pan/zoom effects.",
+                "when_to_use": "Best for polished marketing videos, tutorials, or when you need precise control over each frame.",
+                "steps": [
+                    "1. screenshot(name='scene1', quality='full') - CRITICAL: Use quality='full' to prevent compression",
+                    "2. screenshot(name='scene2', quality='full') - Take screenshots for each scene",
+                    "3. Use ffmpeg zoompan filter for Ken Burns effect (see ken_burns_ffmpeg below)",
+                    "4. Concatenate scenes and add voiceover",
+                ],
+                "screenshot_quality": {
+                    "full": "Original resolution, no compression. USE THIS FOR VIDEO PRODUCTION.",
+                    "optimized": "Auto-resizes to 2000px max. Good for debugging/LLM analysis, BAD for video.",
+                },
+                "ken_burns_ffmpeg": "ffmpeg -loop 1 -i screenshot.png -vf \"zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=125:s=1920x1080\" -t 5 -c:v libx264 -pix_fmt yuv420p output.mp4",
+                "warning": "Default screenshot(quality='optimized') resizes images >2000px - this causes visible quality loss in final video!"
+            },
         }
 
         # Common ffmpeg command examples for agents
@@ -249,6 +265,8 @@ class PostProductionMixin:
             "ALWAYS generate voiceover FIRST - audio duration determines video pacing",
             "For natural-sounding voiceover: use provider='elevenlabs' with stability=0.35, style=0.3",
             "Recommended voices: H2JKG8QcEaH9iUMauArc (Abhinav - warm), qr9D67rNgxf5xNgv46nx (Tarun - expressive)",
+            "For Ken Burns videos: use screenshot(quality='full') to prevent compression artifacts",
+            "Default screenshot(quality='optimized') resizes to 2000px max - good for debugging, bad for video",
             "Use ffmpeg via shell for post-production (avoids MCP timeout issues)",
             "For WebM to MP4: ffmpeg -i input.webm -c:v libx264 -preset fast output.mp4",
             "Keep background music at 10-15% volume (volume=0.15 in ffmpeg)",

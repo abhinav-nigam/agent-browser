@@ -57,9 +57,11 @@ BROWSER CONTROL
   viewport <w> <h>          Set viewport size
 
 SCREENSHOTS
-  screenshot [name]         Full-page screenshot
-  screenshot viewport [name] Viewport only (faster)
-  ss [name]                 Alias for screenshot
+  screenshot [name]             Full-page screenshot (auto-resized for LLM)
+  screenshot full [name]        Full-page, original quality (for video)
+  screenshot viewport [name]    Viewport only (faster, auto-resized)
+  screenshot viewport full [name] Viewport, original quality (for video)
+  ss [name]                     Alias for screenshot
 
 INTERACTIONS
   click <selector>          Click element
@@ -189,16 +191,34 @@ class BrowserDriver:
                 return page.url
 
             # SCREENSHOTS
+            # Syntax: screenshot [viewport] [full] [name]
+            # - viewport: capture viewport only (not full page)
+            # - full: skip compression (for video/cinematic production)
             if cmd in ("screenshot", "ss"):
-                viewport_only = len(parts) > 1 and parts[1].lower() == "viewport"
-                if viewport_only:
-                    name = parts[2] if len(parts) > 2 else f"step_{step:02d}"
-                else:
-                    name = parts[1] if len(parts) > 1 else f"step_{step:02d}"
+                viewport_only = False
+                full_quality = False
+                name = f"step_{step:02d}"
+
+                # Parse optional flags
+                remaining_parts = parts[1:]
+                for part in remaining_parts:
+                    lower = part.lower()
+                    if lower == "viewport":
+                        viewport_only = True
+                    elif lower == "full":
+                        full_quality = True
+                    else:
+                        name = part  # Treat as filename
+
                 safe_name = sanitize_filename(name)
                 filepath = self.output_dir / f"{safe_name}.png"
                 page.screenshot(path=str(filepath), full_page=not viewport_only)
-                resize_status = resize_screenshot_if_needed(filepath)
+
+                # Skip resize for full quality mode (video/cinematic use)
+                if full_quality:
+                    resize_status = "full-quality"
+                else:
+                    resize_status = resize_screenshot_if_needed(filepath)
                 return f"Screenshot: {filepath} [{resize_status}]"
 
             # INTERACTION

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-01-11
+
+### Added
+- **Screenshot quality modes** to prevent compression artifacts in video production:
+  - `screenshot(quality="full")` - Original resolution, no compression (for Ken Burns videos)
+  - `screenshot(quality="optimized")` - Auto-resize to 2000px max (default, for LLM debugging)
+  - `full_page` parameter to choose between full page and viewport screenshots
+- CLI: `screenshot full [name]` flag for full-quality screenshots
+- Best practices in `check_environment()` for screenshot quality in video workflows
+
+### Changed
+- MCP screenshot tool now defaults to `quality="optimized"` with option for full quality
+- CLI screenshot command supports both `viewport` and `full` flags in any order
+
 ## [0.2.6] - 2026-01-11
 
 ### Added

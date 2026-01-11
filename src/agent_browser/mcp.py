@@ -31,7 +31,7 @@ from playwright.async_api import (
 )
 
 from .cinematic import CinematicMixin
-from .utils import sanitize_filename, validate_path
+from .utils import sanitize_filename, validate_path, resize_screenshot_if_needed
 
 LOGGER = logging.getLogger(__name__)
 
@@ -717,11 +717,25 @@ class BrowserServer(CinematicMixin):
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": str(exc)}
 
-    async def screenshot(self, name: Optional[str] = None) -> Dict[str, Any]:
+    async def screenshot(
+        self,
+        name: Optional[str] = None,
+        full_page: bool = True,
+        quality: str = "optimized",
+    ) -> Dict[str, Any]:
         """
-        [Agent Browser] Take a full-page screenshot (PNG).
+        [Agent Browser] Take a screenshot (PNG).
+
+        Args:
+            name: Optional filename (without extension). Defaults to "screenshot".
+            full_page: If True, captures full scrollable page. If False, viewport only.
+            quality: Screenshot quality mode:
+                - "optimized" (default): Resizes large images (>2000px) for faster LLM processing
+                - "full": Original resolution, no compression. Use for video/cinematic production.
+
         Returns the file path in data.path. Screenshots are saved to ./screenshots/.
-        Use for visual verification or when you need to see the current page state.
+        Use quality="full" when screenshots will be used for Ken Burns videos or other
+        cinematic production where image quality matters.
         """
 
         try:
@@ -730,11 +744,22 @@ class BrowserServer(CinematicMixin):
                 self.screenshot_dir.mkdir(parents=True, exist_ok=True)
                 label = sanitize_filename(name or "screenshot")
                 filepath = self.screenshot_dir / f"{label}.png"
-                await page.screenshot(path=str(filepath), full_page=True)
+                await page.screenshot(path=str(filepath), full_page=full_page)
+
+            # Apply resize for optimized mode (better for LLM consumption)
+            resize_status = "skipped"
+            if quality != "full":
+                resize_status = resize_screenshot_if_needed(filepath)
+
             return {
                 "success": True,
                 "message": f"Screenshot saved to {filepath}",
-                "data": {"path": str(filepath)},
+                "data": {
+                    "path": str(filepath),
+                    "quality": quality,
+                    "resize_status": resize_status,
+                    "full_page": full_page,
+                },
             }
         except Exception as exc:  # pylint: disable=broad-except
             return {"success": False, "message": str(exc)}
